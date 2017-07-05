@@ -1402,11 +1402,17 @@ def isFiducialList(ls, Apo, zMin, zMax):
 			fidList.append(item)
 	return fidList
 
-def getStandoffList(ls, name):
-	standoffHist = ROOT.TH1F(name, name, 20, 0, 0.2)
+def getStandoffList(ls, name, bins=20, scale=True):
+        if scale:
+            standoffHist = ROOT.TH1F(name, name, bins, 0, 200)
+        else:
+            standoffHist = ROOT.TH1F(name, name, bins, 0, 0.2)
 
 	for item in ls:
-		standoffHist.Fill( getStandoff(*item) )
+                if scale:
+                    standoffHist.Fill( getStandoff(*np.array(item)/1000)*1000 )
+                else:
+                    standoffHist.Fill( getStandoff(*item) )
 
 	return standoffHist
 

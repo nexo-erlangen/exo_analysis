@@ -424,6 +424,114 @@ def plotStandoffHisto(fName, type='ss', show=True, out=''):
 
         f.Close()
 
+def plotStandoffHistoFancy(fName, type='ss', show=False, out=''):
+        import matplotlib
+        from matplotlib import rc
+        # rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
+        rc('text', usetex=False)
+        matplotlib.use('pgf')
+        pgf_with_rc_fonts = {
+                "pgf.texsystem": "pdflatex",
+                "pgf.preamble": [
+                    r"\usepackage{amsmath}",
+                    ],
+                "font.family": "sans-serif",
+                "font.sans-serif": ["Helvetica"],
+        }
+        matplotlib.rcParams.update(pgf_with_rc_fonts)
+
+        from matplotlib import pyplot as plt
+        import matplotlib.patches as patches
+        import matplotlib.ticker as ticker
+
+        f = ROOT.TFile.Open(fName)
+        hDict = openAllHistos(f)
+        if type == 'ss':
+            hData = hDict['DataSS']
+            hMc = hDict['McSS']
+        else:
+            hData = hDict['DataMS']
+            hMc = hDict['McMS']
+
+        # Turn ROOT-histograms to lists
+        (x, data), (xMC, mc) = histToList(hData), histToList(hMc)
+        if x != xMC:
+            print 'Something went wrong!'
+            return False
+
+        x, data, mc = np.array(x).astype(float), np.array(data).astype(float), np.array(mc).astype(float)
+
+        # Get bin width
+        binW = x[1] - x[0]
+
+        # Calculate errors and normalize
+        dataErr, mcErr = np.sqrt( data ) / sum(data), np.sqrt( mc ) / sum(mc)
+        data, mc = data / sum(data), mc / sum(mc)
+
+        # Residuals
+        res = np.nan_to_num( (data - mc) / data )
+        resErr = np.nan_to_num( abs(mc/data) * np.sqrt( (mcErr/mc)**2 + (dataErr/data)**2 ) )
+        resResult = [r for r in res if (r != 0. and abs(r) < .3)]
+
+        # Create figure
+        f, (axMain, axRes) = plt.subplots(2, sharex=True, sharey=False, gridspec_kw = {'height_ratios':[2.5, 1]})
+        f.subplots_adjust(wspace=0, hspace=0)
+
+        # Axis Main
+        axMain.step(x, mc, where='post', color='k', label='MC', zorder=0)
+        axMain.errorbar(x+.5*binW, mc, yerr=mcErr, fmt='none', color='#4bae8d', zorder=1)
+        axMain.errorbar(x+.5*binW, data, yerr=dataErr, xerr=.5*binW, fmt='x', color='#7878cd', label='Data', zorder=1)
+
+        # Get the deviation and the mean of the residuals
+        # result = [RMS, mean, std]
+        result = np.sqrt(sum([d**2 for d in resResult])), np.mean(resResult), np.std(resResult)
+
+        # Add box to indicate 1-sigma interval
+        axRes.add_patch(patches.Rectangle((-200, result[1]-result[2]), 400, 2*result[2], alpha=.5, facecolor='#7878cd', edgecolor='#7878cd'))   
+
+        # Axis Residuals
+        axRes.errorbar(x+.5*binW, res, xerr=.5*binW, yerr=resErr, fmt='x', color='black', zorder=2)
+
+        # Set properties
+        # Main
+        axMain.set_xlim(0, 180)
+        axMain.legend(loc='best')
+
+        # Check if width is integer
+        if int(binW) == binW:
+            axMain.set_ylabel(r'Normalized Events / (%d mm)' % binW)
+        else:
+            axMain.set_ylabel(r'Normalized Events / (%.2f mm)' % binW)
+
+        axMain.axhline(y=0, lw=.5, ls='--', color='k')
+
+        # Residuals
+        axRes.grid()
+        axRes.set_xlim(0, 180)
+        # if any(abs(r) > 0.15 for r in resResult):
+        axRes.set_ylim(-0.3, 0.3)
+        '''
+        if abs(res[0]) > 0.15:
+            # lim = float(int(abs(resResult[0])*10)+2)/10
+            lim = abs(res[0]) + 0.1
+            axRes.set_ylim(-lim, lim)
+        else:
+            axRes.set_ylim(-0.15, 0.15)
+        '''
+
+        yloc = plt.MaxNLocator(5)
+        axRes.yaxis.set_major_locator(yloc)
+        axRes.axhline(y=result[1], linewidth=.5, ls='--', color='k')
+
+        axRes.set_xlabel(r'Standoff distance [mm]')
+        axRes.set_ylabel(r"$\frac{n_{\mathrm{Data}} - n_{\mathrm{MC}}}{n_{\mathrm{Data}}}$")
+        if show:
+            f.show()
+            raw_input('')
+
+        if out:
+            f.savefig(out)
+
 def hist2dToList(h):
     x_bins = h.GetNbinsX()
     y_bins = h.GetNbinsY()
@@ -513,7 +621,7 @@ def plotLbkg(fName, fit=False, art='ss', output='default.pdf', N=3):
 
     typeList = ['z', 'a', 'so', 'r']
     xLabelList = ['z [mm]', 'Apothem [mm]', 'Standoff distance [mm]', 'Radius [mm]']
-    yLabel = 'Normalized counts'
+    yLabel = 'Normalized Events'
     xRangeList = [(-200, 200), (0, 180), (0, 180), (0, 200)]
     yRangeList = [(0.02, 0.045), (0.0, 0.14), (0.0, 0.172), (0.0, 0.13)]
     # normList = [(-200, 200), (130, 180), (0, 50), (140, 200)]
@@ -714,4 +822,161 @@ def fileToDict(fN):
         d[tuple(k)] = h
 
     return d
+
+def plotStandoffZ(dataRoot, mcRoot, nBins, bin=0, region='all', show=False, out=''):
+    import time
+
+    import matplotlib
+    from matplotlib import rc
+    # rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
+    rc('text', usetex=False)
+    matplotlib.use('pgf')
+    pgf_with_rc_fonts = {
+            "pgf.texsystem": "pdflatex",
+            "pgf.preamble": [
+                r"\usepackage{amsmath}",
+                ],
+            "font.family": "sans-serif",
+            "font.sans-serif": ["Helvetica"],
+    }
+    matplotlib.rcParams.update(pgf_with_rc_fonts)
+
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
+    import sortData as sd
+    import peak_finder as peak
+
+    # Get values
+    print mcRoot, dataRoot
+
+    hMCDictZ, hDataDictZ = sd.sortDataFile(mcRoot, dataRoot, None)
+    time.sleep(1)
+    x, y, mc, mcErr, data, dataErr, diff, diffErr = sd.plotStandoff(hMCDictZ, hDataDictZ, nBins, 0, True, False, True)
+    time.sleep(1)
+
+    x, data, dataErr, mc, mcErr, diff, diffErr = np.array(x), np.array(data)[:,bin], np.array(dataErr)[:,bin], np.array(mc)[:,bin], np.array(mcErr)[:,bin], np.array(diff)[:,bin], np.array(diffErr)[:,bin]
+    binW = x[1] - x[0]
+
+    # Create figure 
+    f, (axMain, axRes) = plt.subplots(2, sharex=True, sharey=False, figsize=(8, 4), gridspec_kw = {'height_ratios':[2.5, 1]})
+    f.subplots_adjust(wspace=0, hspace=0)
+
+    # Axis main
+    axMain.step(x, mc, where='mid', color='#4bae8d', label='MC', zorder=2)
+    axMain.errorbar(x, mc, yerr=mcErr, fmt='x', color='#4bae8d', zorder=2)
+    axMain.step(x, data, where='mid', color='#7878cd', label='Data', zorder=2)
+    axMain.errorbar(x, data, yerr=dataErr, fmt='x', color='#7878cd', zorder=2)
+
+    # Field shaping rings
+    top, bottom = (-2, 2) # axMain.get_ylim() 
+    for flip in [False, True]:
+        for n in range(10):
+            right, left = peak.fieldShape(n, flip=flip)
+            axMain.add_patch(patches.Rectangle((left, bottom), right-left, top-bottom, alpha=.3, facecolor='gray', edgecolor='gray'))
+
+    # Get the deviation and the mean of the residuals
+    # result = [RMS, mean, std]
+    resResult = [r for r in diff if (r != 0. and abs(r) < .5)]
+    result = np.sqrt(sum([d**2 for d in resResult])), np.mean(resResult), np.std(resResult)
+
+    # Add box to indicate 1-sigma interval
+    axRes.add_patch(patches.Rectangle((-200, result[1]-result[2]), 400, 2*result[2], alpha=.5, facecolor='#7878cd', edgecolor='#7878cd'))   
+
+    # Axis residuals
+    axRes.errorbar(x, diff, xerr=.5*binW, yerr=diffErr, fmt='x', color='black', zorder=2)
+
+    # Set properties
+    #Main
+    if region == 'top':
+        if bin > 0:
+            axMain.set_xlim(10, 150)
+            axRes.set_xlim(10, 150)
+        else:
+            axMain.set_xlim(10, 182)
+            axRes.set_xlim(10, 182)
+        autoscale_y(axMain, 0.2)
+    elif region == 'bottom':
+        if bin > 0:
+            axMain.set_xlim(-150, -10)
+            axRes.set_xlim(-150, -10)
+        else:
+            axMain.set_xlim(-182, -10)
+            axRes.set_xlim(-182, -10)
+        autoscale_y(axMain, 0.2)
+    else:
+        axMain.set_xlim(-190, 190)
+        axRes.set_xlim(-190, 190)
+
+    yticks = axMain.get_yticks()
+    ytickDist = yticks[1] - yticks[0]
+    ymin, ymax = axMain.get_ylim()
+    axMain.set_ylim(bottom=ymin-ytickDist*.3)
+
+    axMain.legend(loc='best')
+    # Line at x-axis
+    axMain.axhline(y=0, linewidth=.5, ls='--')
+
+    # Check if width is integer
+    if int(binW) == binW:
+        axMain.set_ylabel(r'Normalized events / (%d mm)' % binW)
+    else:
+        axMain.set_ylabel(r'Normalized events / (%.2f mm)' % binW)
+
+    axRes.grid()
+    axRes.set_ylim(-.4, .4)
+    yloc = plt.MaxNLocator(5)
+    axRes.yaxis.set_major_locator(yloc)
+    # Horizontal line at mean value
+    axRes.axhline(y=result[1], linewidth=.5, ls='--')
+
+    axRes.set_xlabel(r"z [mm]")
+    axRes.set_ylabel(r"$\frac{n_{\mathrm{Data}} - n_{\mathrm{MC}}}{n_{\mathrm{Data}}}$")
+
+    if show:
+        f.show()
+        raw_input('')
+
+    if out:
+        f.savefig(out)
+
+    if region == 'all':
+        import cPickle 
+        try:
+            d = cPickle.load(open('standoff_results.p', 'rb'))
+        except:
+            d = {}
+
+        d[out.split('.')[0].split('/')[-1]] = result
+        cPickle.dump(d, open('standoff_results.p', 'wb'))
+
+    plt.close()
+    plt.cla()
+
+# SOURCE: https://stackoverflow.com/questions/29461608/matplotlib-fixing-x-axis-scale-and-autoscale-y-axis
+def autoscale_y(ax,margin=0.1):
+    """This function rescales the y-axis based on the data that is visible given the current xlim of the axis.
+    ax -- a matplotlib axes object
+    margin -- the fraction of the total height of the y-data to pad the upper and lower ylims"""
+
+    import numpy as np
+
+    def get_bottom_top(line):
+        xd = line.get_xdata()
+        yd = line.get_ydata()
+        lo,hi = ax.get_xlim()
+        y_displayed = yd[((xd>lo) & (xd<hi))]
+        h = np.max(y_displayed) - np.min(y_displayed)
+        bot = np.min(y_displayed)-margin*h
+        top = np.max(y_displayed)+margin*h
+        return bot,top
+
+    lines = ax.get_lines()
+    bot,top = np.inf, -np.inf
+
+    for line in lines:
+        new_bot, new_top = get_bottom_top(line)
+        if new_bot < bot: bot = new_bot
+        if new_top > top: top = new_top
+
+    ax.set_ylim(bot,top)
 

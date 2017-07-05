@@ -104,10 +104,15 @@ def findPeaks(xLs, dataLs, dataErrLs, doBox=False, title='default', outFn='stand
 
         ps.setShow(True)
 
-def fieldShape(n):
+def fieldShape(n, flip=False):
 	FIELDRING_WIDTH = 9.652
 	top = -18.2753 - n*16.8656
-	bottom = top - FIELDRING_WIDTH
+        if flip:
+            top *= -1
+            bottom = top + FIELDRING_WIDTH
+            top, bottom = bottom, top
+        else:
+            bottom = top - FIELDRING_WIDTH
 	return (top, bottom)
 
 def peakdet(v, delta, x = None):

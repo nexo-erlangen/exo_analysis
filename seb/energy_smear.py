@@ -18,7 +18,7 @@ def energySmear(tData, dataList, tMC, FV, art='ss'):
     # return
 
     bins = [100, 20]
-    hRange = [[2400, 3000], [0, 200]]
+    hRange = [[2000, 3000], [0, 200]]
 
     ROOT.EXOFiducialVolume.SetUserHexCut(*FV)
     ROOT.gROOT.cd()

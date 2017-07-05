@@ -55,13 +55,17 @@ def main():
 			drawHistograms(H_BINS, plotDir + 'SS/', SSoutDir, SSoutFile, False, cyl, nodiff, show)
 
 	# ==== TEST RANGE ====
+        resBinsList = [20, 100]
+        nBins = 120
+
+        import re
+        sortDataOutFn = settings.split('.')[0]
+        sortDataOutFn = re.sub('settings', '', sortDataOutFn)
+        sortDataOutDir = '/home/vault/capm/mppi025h/plot_scripts/standoffFiles/%s/' % sortDataOutFn
+
         if standoff:
-		nBins = 120
 		# showBin = 5 shows sum over first five bins
                 showBin = 0
-
-                sortDataOutFn = settings.split('.')[0]
-                sortDataOutDir = '/home/vault/capm/mppi025h/plot_scripts/standoffFiles/'
 
 		# == GENERATE PLOT DATA ==
 		if not show:
@@ -76,8 +80,8 @@ def main():
 				# Fill standoff histograms and save them to
 				# root files.
 
-                                if not os.path.isdir(sortDataOut + sortDataOutFn):
-                                    os.makedirs(sortDataOut + sortDataOutFn)
+                                if not os.path.isdir(sortDataOutDir):
+                                    os.makedirs(sortDataOutDir)
 
 				if ms:
 					sd.sortDataSave(dataChain, mcChain, FV, nBins, sortDataOutFn + 'MS', 'ms', sortDataOutDir)
@@ -95,7 +99,7 @@ def main():
 				# Positions w cut
 				# sd.sortDataSaveRand('randPosCut.p', 'randDriftPosCut.p', nBins)
 
-			return
+			# return
 
 		# == PLOT ==
 		else:
@@ -115,73 +119,91 @@ def main():
 			return
 
 	if drawcyl:
-                # fName = 'standoffS5fid.root'
-                # fName = 'standoffHex_artDrift_neg.root'
-                # fName = 'standoffArtDriftNM.root'
-                fName = sortDataOutFn + '.root'
+            if not show:
+                for resBins in resBinsList:
+                    fName = sortDataOutFn + '_%d.root' % resBins
+                    print fName 
 
-		# ==== GET TRUE STANDOFF ====
-		# Store standoff histograms of investigated
-		# data to root file. 
-		# ATTENTION: Keep the fiducial cut in mind!
-		dataChain = getChain('dataTree', dataList)
-		mcChain = getChain('mcTree', mcList)
+                    # fName = 'standoffS5fid.root'
+                    # fName = 'standoffHex_artDrift_neg.root'
+                    # fName = 'standoffArtDriftNM.root'
 
-                # scatterEnergy(dataChain, FV, 'ss')
-                # return
+                    # ==== GET TRUE STANDOFF ====
+                    # Store standoff histograms of investigated
+                    # data to root file. 
+                    # ATTENTION: Keep the fiducial cut in mind!
+                    dataChain = getChain('dataTree', dataList)
+                    mcChain = getChain('mcTree', mcList)
 
-                # Compare characteristics of MC and data root-files
-                # getCompHisto(fName, dataChain, mcChain, FV, type='ss', selectList=['standoff_distance', 'multiplicity', 'energy', 'num_coll_wires', 'num_ind_wires', 'u_mst_metric', 'v_mst_metric'], name='')
-                # getCompHisto(fName, dataChain, mcChain, FV, type='ms', selectList=['standoff_distance', 'multiplicity', 'energy', 'num_coll_wires', 'num_ind_wires', 'u_mst_metric', 'v_mst_metric'], name='')
+                    # scatterEnergy(dataChain, FV, 'ss')
+                    # return
 
-                # getCompHisto(fName, dataChain, mcChain, FV, type='ss', selectList=['standoff_distance', 'multiplicity', 'energy', 'u_mst_metric', 'v_mst_metric'], name='')
-                # getCompHisto(fName, dataChain, mcChain, FV, type='ms', selectList=['standoff_distance', 'multiplicity', 'energy', 'u_mst_metric', 'v_mst_metric'], name='')
+                    # Compare characteristics of MC and data root-files
+                    # getCompHisto(fName, dataChain, mcChain, FV, type='ss', selectList=['standoff_distance', 'multiplicity', 'energy', 'num_coll_wires', 'num_ind_wires', 'u_mst_metric', 'v_mst_metric'], name='')
+                    # getCompHisto(fName, dataChain, mcChain, FV, type='ms', selectList=['standoff_distance', 'multiplicity', 'energy', 'num_coll_wires', 'num_ind_wires', 'u_mst_metric', 'v_mst_metric'], name='')
 
-                # getCompHisto(fName, dataChain, mcChain, FV, type='ss', selectList=['energy'], name='')
-                # return
+                    # getCompHisto(fName, dataChain, mcChain, FV, type='ss', selectList=['standoff_distance', 'multiplicity', 'energy', 'u_mst_metric', 'v_mst_metric'], name='')
+                    # getCompHisto(fName, dataChain, mcChain, FV, type='ms', selectList=['standoff_distance', 'multiplicity', 'energy', 'u_mst_metric', 'v_mst_metric'], name='')
 
-		if ss:
-			getStandoffHisto('standoffRoot/' + fName, dataChain, FV, 'ss', False, 'DataSS')
-			# NEvents = getApothemThetaHisto('standoffRoot/' + fName, dataChain, FV, 'ss', False, 0, 'DataSS', 3)
-			# getApothemHisto('standoffRoot/' + fName, dataChain, FV, 'ss', False, 'DataSS')
-                        # print 'NEvents:', NEvents
+                    # getCompHisto(fName, dataChain, mcChain, FV, type='ss', selectList=['energy'], name='')
+                    # return
 
-                        if random:
-                            # Rate agreement
-                            # NEvents = int( 1.e6 )
-                            generate2nbb('standoffRoot/' + fName, NEvents, FV, name='McSS', N=3)
-                        else:
-                            getStandoffHisto('standoffRoot/' + fName, mcChain, FV, 'ss', True, 'McSS')
-                            # getApothemThetaHisto('standoffRoot/' + fName, mcChain, FV, 'ss', True, NEvents, 'McSS', 3)
-                            # getApothemHisto('standoffRoot/' + fName, mcChain, FV, 'ss', True, 'McSS')
-		if ms:
-			getStandoffHisto('standoffRoot/' + fName, dataChain, FV, 'ms', False, 'DataMS')
-			# getApothemThetaHisto('standoffRoot/' + fName, dataChain, FV, 'ms', False, 'DataMS')
+                    if ss:
+                            getStandoffHistoMan('standoffRoot/' + fName, dataChain, FV, 'ss', False, 'DataSS', None, resBins)
+                            # NEvents = getApothemThetaHisto('standoffRoot/' + fName, dataChain, FV, 'ss', False, 0, 'DataSS', 3)
+                            # getApothemHisto('standoffRoot/' + fName, dataChain, FV, 'ss', False, 'DataSS')
+                            # print 'NEvents:', NEvents
 
-		    	getStandoffHisto('standoffRoot/' + fName, mcChain, FV, 'ms', True, 'McMS')
-		    	# getApothemThetaHisto('standoffRoot/' + fName, mcChain, FV, 'ms', True, 'McMS')
+                            if random:
+                                # Rate agreement
+                                # NEvents = int( 1.e6 )
+                                generate2nbb('standoffRoot/' + fName, NEvents, FV, name='McSS', N=3)
+                            else:
+                                getStandoffHistoMan('standoffRoot/' + fName, mcChain, FV, 'ss', True, 'McSS', None, resBins)
+                                # getApothemThetaHisto('standoffRoot/' + fName, mcChain, FV, 'ss', True, NEvents, 'McSS', 3)
+                                # getApothemHisto('standoffRoot/' + fName, mcChain, FV, 'ss', True, 'McSS')
+                    if ms:
+                            getStandoffHistoMan('standoffRoot/' + fName, dataChain, FV, 'ms', False, 'DataMS', None, resBins)
+                            # getApothemThetaHisto('standoffRoot/' + fName, dataChain, FV, 'ms', False, 'DataMS')
 
-                # plotLbkg('standoffRoot/' + fName, fit=True, art='ss', output='hexSplit6_lbkgCut.pdf', N=3)
+                            getStandoffHistoMan('standoffRoot/' + fName, mcChain, FV, 'ms', True, 'McMS', None, resBins)
+                            # getApothemThetaHisto('standoffRoot/' + fName, mcChain, FV, 'ms', True, 'McMS')
 
-		# ==== READ & COMPARE STANDOFF ====
+                    # plotLbkg('standoffRoot/' + fName, fit=True, art='ss', output='hexSplit6_lbkgCut.pdf', N=3)
+
+            else:
+                # ==== READ & COMPARE STANDOFF ====
                 if not os.path.isdir('standoffPlots/%s' % sortDataOutFn):
                     os.makedirs('standoffPlots/%s' % sortDataOutFn)
 
                 if ss:
-			plotStandoffHisto('standoffRoot/' + fName, 'ss', False, 'standoffPlots/%s' % sortDataOutFn + fName.split('.')[0] + 'SS.pdf')
+                    for resBins in resBinsList:
+                        fName = sortDataOutFn + '_%d.root' % resBins
+                        print fName 
+                        plotStandoffHistoFancy('standoffRoot/' + fName, 'ss', False, 'standoffPlots/%s/' % sortDataOutFn + fName.split('.')[0] + 'SS%d.pdf' % resBins)
+                    for region in ['all', 'top', 'bottom']:
+                        for b in range(3):
+                            plotStandoffZ(sortDataOutDir + 'data%sSSZ.root' % sortDataOutFn, sortDataOutDir + 'mc%sSSZ.root' % sortDataOutFn, nBins, b, region, False, 'standoffPlots/%s/' % sortDataOutFn + sortDataOutFn + 'SS%dzStandoff%sBin%d.pdf' % (nBins, region.title(), b))
+
                 if ms:
-			plotStandoffHisto('standoffRoot/' + fName, 'ms', False, 'standoffPlots/' + fName.split('.')[0] + 'MS.pdf')
+                    for resBins in resBinsList:
+                        fName = sortDataOutFn + '_%d.root' % resBins
+                        print fName 
+                        plotStandoffHistoFancy('standoffRoot/' + fName, 'ms', False, 'standoffPlots/%s/' % sortDataOutFn + fName.split('.')[0] + 'MS%d.pdf' %resBins)
+                    for region in ['all', 'top', 'bottom']:
+                        for b in range(3):
+                            plotStandoffZ(sortDataOutDir + 'data%sMSZ.root' % sortDataOutFn, sortDataOutDir + 'mc%sMSZ.root' % sortDataOutFn, nBins, b, region, False, 'standoffPlots/%s/' % sortDataOutFn + sortDataOutFn + 'MS%dzStandoff%sBin%d.pdf' % (nBins, region.title(), b))
 
-		'''
-		# ==== COMPARE DRIFTED RND DATA ====
-		spacing = [np.linspace(-0.0000001, -0.000001, 10), np.linspace(-0.2, 0.2, 10), np.linspace(-0.05, 0.05, 10)]
+                '''
+                # ==== COMPARE DRIFTED RND DATA ====
+                spacing = [np.linspace(-0.0000001, -0.000001, 10), np.linspace(-0.2, 0.2, 10), np.linspace(-0.05, 0.05, 10)]
 
-		fName = 'standoffDrift.root'
-		fNameTrue = 'trueStandoff.root'
-		rootToHist(fName, fNameTrue, spacing, 5)
+                fName = 'standoffDrift.root'
+                fNameTrue = 'trueStandoff.root'
+                rootToHist(fName, fNameTrue, spacing, 5)
 
-		# drawHistoCyl(diffRelHist)
-		'''
+                # drawHistoCyl(diffRelHist)
+                '''
 
 	if(random):
 		if ss:

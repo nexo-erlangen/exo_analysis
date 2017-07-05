@@ -67,7 +67,7 @@ def correctDictNotation(hDict):
 
 	return hCorrDict
 
-def plotStandoff(mcStandoff, dataStandoff, bins, binN=0, binning=True, show=True):
+def plotStandoff(mcStandoff, dataStandoff, bins, binN=0, binning=True, show=True, errorOut=False):
 	xGrid = []
 	yGrid = []
 	# chi2 = []
@@ -80,8 +80,8 @@ def plotStandoff(mcStandoff, dataStandoff, bins, binN=0, binning=True, show=True
 	# hSumData.Sumw2(True)
 
 	# Bins of data and MC histograms
-	valMC = []
-	valData = []
+	valMC, valMCError = [], []
+	valData, valDataError = [], []
 	# Bins of the difference of data and MC histograms
 	valDiff = []
 	valDiffError = []
@@ -154,8 +154,8 @@ def plotStandoff(mcStandoff, dataStandoff, bins, binN=0, binning=True, show=True
 		# Loop over the first bins of the 
 		# standoff histograms and store their
 		# values in the val* lists
-		vData = []
-		vMC = []
+		vData, vDataError = [], []
+		vMC, vMCError = [], []
 		vDiff = []
 		vDiffError = []
 		for i in range(1, 10 + 1):
@@ -209,7 +209,9 @@ def plotStandoff(mcStandoff, dataStandoff, bins, binN=0, binning=True, show=True
 			vDiff.append( diffBin )
 			vDiffError.append( diffBinError )
 			vData.append( dataBin )
+                        vDataError.append( dataBinErr )
 			vMC.append( mcBin )
+                        vMCError.append( mcBinErr )
 
 		# Also append the sum of all bins as
 		# last entry
@@ -221,7 +223,9 @@ def plotStandoff(mcStandoff, dataStandoff, bins, binN=0, binning=True, show=True
 		# bins in the lists containing the data
 		# for every position
 		valData.append( vData )
+                valDataError.append( vDataError )
 		valMC.append( vMC )
+                valMCError.append( vMCError )
 		valDiff.append( vDiff )
 		valDiffError.append( vDiffError ) 
 
@@ -249,10 +253,16 @@ def plotStandoff(mcStandoff, dataStandoff, bins, binN=0, binning=True, show=True
 		xMC, valDiff = sortLists(xGrid, valDiff)
 		xMC, valDiffError = sortLists(xGrid, valDiffError)
                 xMC, valMC = sortLists(xGrid, valMC)
+                xMC, valMCError = sortLists(xGrid, valMCError)
                 xMC, valData = sortLists(xGrid, valData)
+                xMC, valDataError = sortLists(xGrid, valDataError)
+                # print np.array(valDataError)[:,0]
 
 		print 'Returning...'
-		return xMC, yGrid, valMC, valData, valDiff, valDiffError
+                if errorOut:
+                    return xMC, yGrid, valMC, valMCError, valData, valDataError, valDiff, valDiffError
+                else:
+                    return xMC, yGrid, valMC, valData, valDiff, valDiffError
 
 	else:
 		valMCNorm = normalizeValList(valMC, hSumMC)

@@ -158,9 +158,10 @@ def getMaxCyl(x, y, z, es):
 	return maxR, maxZ, maxTheta
 
 def getMaxCart(x, y, z):
+        x, y, z = np.array(x), np.array(y), np.array(z)
+
 	# Return value with maximum radius
-	r = np.sqrt((x**2 + y**2))
-	r = (r * (r < 900))
+	r = np.array([ri for ri in np.sqrt((x**2 + y**2)) if abs(ri) < 900])
 
 	if ( REFLECTORINNERRAD - max(r) ) > ( CATHODE_ANODE_y_DISTANCE - abs(GetMaxZ(z)) ):
 		i = np.argmax(z)
@@ -175,12 +176,14 @@ def getMaxCart(x, y, z):
 	return xMax, yMax, zMax
 
 def GetMaxZ(posZ):
-	zMax = np.amax(posZ * (np.absolute(posZ) < 900))
-	zMin = np.amin(posZ * (np.absolute(posZ) < 900))
-	if abs(zMax) < abs(zMin):
-		return zMin
-	else:
-		return zMax
+        posZ = np.array([pZ for pZ in posZ if abs(pZ) < 900])
+	zMax = np.amax(np.absolute(posZ))
+	# zMin = np.amin(np.absolute(posZ))
+	#if abs(zMax) < abs(zMin):
+	#	return zMin
+	#else:
+	#	return zMax
+        return zMax
 
 # return theta in units of pi
 def GetMaxTheta(posX, posY):
@@ -188,7 +191,9 @@ def GetMaxTheta(posX, posY):
 	yMax = np.amax(posY * (np.absolute(posY) < 900))
 	return np.arctan2(xMax, yMax)/np.pi
 
-def getCut(calibCut=True, energyCut=True, type='ms', MC=True, eMin=750, eMax=3500, sideCut=False):
+def getCut(calibCut=True, energyCut=True, type='ms', MC=True, eMin=750, eMax=3500, sideCut=False, phase2=False):
+        phase2 = True
+
 	eventSum = ROOT.EXOEventSummary()
 	prepTree = ROOT.EXOPreprocessedTreeModule() 
 	prepTree.SetIsData(not MC)
@@ -197,7 +202,12 @@ def getCut(calibCut=True, energyCut=True, type='ms', MC=True, eMin=750, eMax=350
 	fFOVs = prepTree.GetFOVs()
 
 	fFOVs.SetBooleanFlag('fIsDataOrMC', not MC)
-	fFOVs.SetStringOption('fDiagonalCutDBFlavor', '2013-0nu-denoised')
+        # Phase 1
+        if not phase2:
+            fFOVs.SetStringOption('fDiagonalCutDBFlavor', '2013-0nu-denoised')
+        # Phase 2
+        # else:
+        #    fFOVs.SetStringOption('fDiagonalCutDBFlavor', 'phase2_v1')
 	fFOVs.SetBooleanFlag('fCutMissingPosition', True)
 	fFOVs.SetBooleanFlag('fVetoLikeCut', calibCut)
 	fFOVs.SetBooleanFlag('fEqualizeThreshold', False)
@@ -231,7 +241,11 @@ def getCut(calibCut=True, energyCut=True, type='ms', MC=True, eMin=750, eMax=350
         else:
                 typeCut = ''
 
-	return prepTree.GetDefaultCut() + enCut + typeCut + sCut
+        cut = prepTree.GetDefaultCut()
+        cut = cut.replace('&& !isSolicitedTrigger', '')
+        if phase2:
+            cut = cut.replace('!EventSummary.isDiagonallyCut() && ', '')
+	return cut + enCut + typeCut + sCut
 
 # Do no multiplicity cut!
 def getCutCombined(calibCut=True, energyCut=True, MC=True, eMin=750, eMax=3500):
@@ -509,7 +523,7 @@ def getStandoff(x, y, z):
 	else:
 		return sd_r
 
-def getStandoffHisto(fName, tree, FV, type='ss', MC=True, name='default', out=None):
+def getStandoffHisto(fName, tree, FV, type='ss', MC=True, name='default', out=None, bins=20):
 	print 'Processing %s...' % name
 	ROOT.EXOFiducialVolume.SetUserHexCut(*FV)
 	ROOT.gROOT.cd()
@@ -525,7 +539,7 @@ def getStandoffHisto(fName, tree, FV, type='ss', MC=True, name='default', out=No
 	ROOT.EXOFiducialVolume.SetUserHexCut(*FV)
 
 	f = ROOT.TFile.Open(fName, 'UPDATE')
-	hist = ROOT.TH1D(name, name, 20, 0, 200)
+	hist = ROOT.TH1D(name, name, bins, 0, 200)
         hStandoff = fillHisto(tree, hist, cut, select, name)
         if out:
             fOut = open(out, 'w')
@@ -538,26 +552,28 @@ def getStandoffHisto(fName, tree, FV, type='ss', MC=True, name='default', out=No
         hStandoff.Write('', ROOT.TObject.kOverwrite)
 	f.Close()
         
-def getStandoffHistoMan(fName, tree, FV, type='ss', MC=True, name='default'):
+def getStandoffHistoMan(fName, tree, FV, type='ss', MC=True, name='default', out=None, bins=20):
 	import generate_random as gr
 	ROOT.EXOFiducialVolume.SetUserHexCut(*FV)
 	ROOT.gROOT.cd()
     
-	cut = getCut(calibCut=True, energyCut=False, type=type, MC=MC, eMin=750, eMax=3500)
-	treeCut = tree.CopyTree( cut ) 	
+	cut = getCut(calibCut=True, energyCut=True, type=type, MC=MC, eMin=980, eMax=9800)
+        print cut
+	treeCut = tree.CopyTree(cut, 'fast') 	
 
-        # N = treeCut.GetEntries()
-        N = 140000
+        N = treeCut.GetEntries()
+        # N = 140000
     
 	posList = []
-	# for i in range( N ):
         j = 0
-        while N > 0:
-                if not j % 1000:
-                    print N, j
+        # while N > 0:
+	for i in range( N ):
+                # if not j % 1000:
+                #    print N, j
 
-		treeCut.GetEntry(j)
-                j += 1
+		treeCut.GetEntry(i)
+		# treeCut.GetEntry(j)
+                # j += 1
 		es = treeCut.EventSummary
                 mul = es.multiplicity
 
@@ -570,7 +586,9 @@ def getStandoffHistoMan(fName, tree, FV, type='ss', MC=True, name='default'):
                         continue
                 '''
 
-		x, y, z = getClusterPos( es, False )
+		x, y, z = getClusterPos( es, True )
+                if np.isnan(x) or np.isnan(y) or np.isnan(z):
+                    continue
 
                 # if z > 0 or abs(z) > 160 or abs(z) < 40 or np.sqrt( x**2 + y**2 ) > 183.:
                 #    continue
@@ -579,19 +597,22 @@ def getStandoffHistoMan(fName, tree, FV, type='ss', MC=True, name='default'):
                 # if x.any() and abs(x).any > 900:
                     # print x
 
-                for i in range( len(x) ):
-                    x_, y_, z_ = x[i], y[i], z[i]
-                    if not isFiducial(x_, y_, z_, 162, 5, 182): # or z_ < 0 or abs(x_) > 900 or not (abs(z_) > 20 and abs(z_) < 130):
-                        continue
-                    posList.append( list( np.array([x_, y_, z_]) / 1000. ) )
-                    N -= 1
+                # for i in range( len(x) ):
+                # x_, y_, z_ = x[i], y[i], z[i]
+                x_, y_, z_ = x, y, z
+                # if not isFiducial(x_, y_, z_, 162, 5, 182): # or z_ < 0 or abs(x_) > 900 or not (abs(z_) > 20 and abs(z_) < 130):
+                #    continue
+                posList.append( list( np.array([x_, y_, z_]) )) # / 1000. ) )
+                N -= 1
 	
 	# fidVerts = gr.isFiducialList(posList, *list( np.array(FV)/1000. ))
         # fidVerts = posList
 
 	f = ROOT.TFile.Open(fName, 'UPDATE')
-	standoffCut = gr.getStandoffList(posList, name) 
-	standoffCut.Scale(1./standoffCut.Integral())
+
+        # Rewrote getStandoffList so it has a maximum of 200 instead of 0.2
+	standoffCut = gr.getStandoffList(posList, name, bins, True)
+	# standoffCut.Scale(1./standoffCut.Integral())
 	standoffCut.Write('', ROOT.TObject.kOverwrite)
 	f.Close()
 

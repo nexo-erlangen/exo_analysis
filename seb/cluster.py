@@ -102,7 +102,10 @@ def main():
     # clusterTest()
     # return
 
-    pdfOut = 'comptonScatterPhase2.pdf'
+    if PHASE2:
+        pdfOut = 'comptonScatterPhase2.pdf'
+    else:
+        pdfOut = 'comptonScatterPhase1.pdf'
 
     dS5 = getDict(src='S5', generate=generate, MC=False)
     resultListS5, resultDictS5 = comptonScattering(dS5, l=1, rLim=None, multiplicity=MULTIPLICITY)
@@ -892,12 +895,14 @@ def getClusterPos(tree, FV, art=None, multiplicity=2):
 
     # Perform cuts
     if art:
-        cut = ps.getCut(calibCut=True, energyCut=False, type=art, MC=False)
+        cut = ps.getCut(calibCut=True, energyCut=False, type=art, MC=False, phase2=PHASE2)
     else:
-        cut = ps.getCutCombined(calibCut=True, energyCut=True, MC=False, eMin=750, eMax=3500)
+        cut = ps.getCutCombined(calibCut=True, energyCut=True, MC=False, eMin=750, eMax=3500, phase2=PHASE2)
 
+    '''
     if PHASE2:
         cut = re.sub('!EventSummary.isDiagonallyCut\(\) && ', '', cut)
+    '''
     print cut
     treeCut = tree.CopyTree( cut )
 

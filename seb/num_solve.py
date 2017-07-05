@@ -9,12 +9,11 @@ def main():
     X = 380.        # Electric field
     u = vD / X      # Mobility
     u /= 2
-    alpha = 1.240   # Recombination coefficient
-    b = 0.002       # Initial ionization distribution shape
+    alpha = 0.001240   # Recombination coefficient
+    b = 0.002       # Initial ionization distribution shape in cm^2
     Dt = 55.        # Diffusion constant
     Dl = 0.1 * Dt
-    d = 0.234       # Length of the column in cm
-    N0 = 6.4e4 / d  # Number of initially present ions in a column of 1 cm length
+    d = 5.e-2 # .1*0.234       # Length of the column in cm
 
     # Stopping power
     density = 3.057 # g/cm^3
@@ -30,16 +29,18 @@ def main():
     dataFilt = np.array( [a for a in zip(x, y) if a[0] <= 1000] )
     x, y = dataFilt[:,0], 1./np.array( dataFilt[:,1] )
 
-    d = scipy.integrate.simps(y, x, even='avg')
-    print 'Integration of stopping power:', d
+    # Length of track in cm
+    dTrack = scipy.integrate.simps(y, x, even='avg')
+    print 'Integration of stopping power: %f cm', dTrack
 
+    # Number of initially present ions in column of 1 cm length
+    N0 = 5000 / d # 6.4e4 / d
+
+    # Plot of the 
     plot(x, [y], axisLabel=[r'Energy $E$ [keV]', r'Stopping power $\frac{1}{S(E)}$ [cm]'])
 
     # Data
-    bRange = np.linspace(0., 0.0003, 1000) 
-    # Y_perp_values_low = [Y_perp(alpha, 1000000, Dl, z(b, u, X, Dl)) for b in bRange]
-    # Y_perp_values_high = [Y_perp(alpha, 10000000, Dl, z(b, u, X, Dl)) for b in bRange]
-    
+    bRange = np.linspace(0., 1.e-3, 1000) 
     Y_perp_values = [Y_perp(alpha, N0, meanDiff, z(b, u, X, meanDiff)) for b in bRange]
     Y_par_values = [Y_par(alpha, b, N0, u, X, Dt, d) for b in bRange]
     X = 567
@@ -51,7 +52,9 @@ def main():
     # plt.plot(bRange, [li(y2(alpha, b, N0, u, X, D, d)) for b in bRange])
 
     # plot(bRange, [Y_perp_values, Y_par_values], labelList=['perpendicular', 'parallel'], axisLabel=[r'$b$ [cm]', r'$\mathcal R$'])
-    plot(bRange, [Y_perp_values, Y_par_values, Y_perp_p2_values, Y_par_p2_values], labelList=['perpendicular', 'parallel', 'perpendicular (Phase 2)', 'parallel (Phase 2)'], axisLabel=[r'$b$ [cm]', r'$\mathcal R$'])
+
+    sigmaRange = .5 * np.array(bRange)
+    plot(sigmaRange, [Y_perp_values, Y_par_values, Y_perp_p2_values, Y_par_p2_values], labelList=['perpendicular', 'parallel', 'perpendicular (Phase 2)', 'parallel (Phase 2)'], axisLabel=[r'$\sigma$ [cm]', r'$\mathcal R$'], vline=None)
 
     raw_input('')
 
@@ -94,7 +97,7 @@ def ellipseRadius(x, a, b):
 def meanDiffusion(Dx, Dy):
     return 1./(2*np.pi) * scipy.integrate.quad(lambda theta: ellipseRadius(theta, Dx, Dy), 0, 2*np.pi)[0]
 
-def plot(x, yList, labelList=None, axisLabel=None):
+def plot(x, yList, labelList=None, axisLabel=None, vline=None):
     import matplotlib.pyplot as plt
     import matplotlib.ticker as mtick
     from matplotlib import rc
@@ -114,6 +117,9 @@ def plot(x, yList, labelList=None, axisLabel=None):
         # ax.xaxis.set_major_formatter(mtick.FormatStrFormatter('%.0e'))
         ax.get_xaxis().get_major_formatter().set_powerlimits((0, 0))
         ax.get_yaxis().get_major_formatter().set_powerlimits((0, 0))
+
+    if vline:
+        ax.axvline(x=vline, ls='--')
     
     ax.set_xlabel(axisLabel[0])
     ax.set_ylabel(axisLabel[1])

@@ -348,8 +348,8 @@ def fillEnergy(t, res, bins, hRange, art='ss', MC=True):
                 E = np.array( es.cluster_energy ) * 2614.5 / 2526.97
         else:
             # E = getNewEnergy(res, es.energy_mc)[0]
-            # energyCorrMC = 2614.5 / 2601.87
-            energyCorrMC = 2614.5 / 2526.97
+            energyCorrMC = 2614.5 / 2601.87
+            # energyCorrMC = 2614.5 / 2526.97
             # E = getNewEnergy(res, np.sum(np.array(es.cluster_energy)))[0] * energyCorrMC
             energy = np.array( es.cluster_energy ) * energyCorrMC
             energyFrac = energy/sum(energy)
