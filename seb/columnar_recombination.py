@@ -10,17 +10,24 @@ import os.path
 import time
 import cPickle
 
-import matplotlib as mpl
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.pyplot as plt
+# Doesn't work when run on cluster
+try:
+    import matplotlib as mpl
+    from mpl_toolkits.mplot3d import Axes3D
+    import matplotlib.pyplot as plt
+except:
+    pass
 
 # Constants
+X = 3.8e6 # V/m^2, electric field
 Dt = 55.e-4 # m^2/s
 Dl = 0.1 * Dt
 vD = 1705 # m/s
-b = 1.e-5 # 2.5e-3 # 5.e-6
-d = 5.e-4 # 2.34e-4 # 5.e-5    # Length of the column
-A = 50.e-9  # Onsager radius
+mobility = vD / X # mobility
+b = 1.e-8 # 2.5e-3 # 5.e-6
+d = 1.e-4 # 2.34e-5 # 2.34e-4 # 5.e-5    # Length of the column
+A = 49.e-9  # Onsager radius
+angle = 0
 
 # Number of particles
 N = 5000
@@ -40,7 +47,7 @@ REPEAT = 3
 
 def main():
     # Load command line arguments
-    uniform, parallel, show, save, MAKEPLOTS, TEST, PRINTRESULTS = get_args()
+    uniform, parallel, show, save, MAKEPLOTS, TEST, PRINTRESULTS, SINGLE = get_args()
     global SHOW
     global SAVE
     global PARALLEL
@@ -57,6 +64,11 @@ def main():
     GAUSS = not uniform
 
     # Declare paths
+    global gifOut
+    global pickleOut
+    global resultOut
+
+    global INTERRUPT
     if PARALLEL:
         INTERRUPT = 500      # Limit for interruption
         gifOut = 'cr/cr_gif_par'
@@ -79,11 +91,19 @@ def main():
     # For printresults
     resultOutList = ['cr/res_par.p', 'cr/res_par_uni.p', 'cr/res_perp.p', 'cr/res_perp_uni.p']
     titleList = ['Parallel (Gauss)', 'Parallel (uniform)', 'Perpendicular (Gauss)', 'Perpendicular (uniform)']
+    colorList = ['orange', 'red', 'blue', 'green']
 
     # === MAKE PLOTS ===
     if MAKEPLOTS:
-        # d = cPickle.load(open(pickleOut, 'rb'))
-        # plotDict( d )
+        dic = cPickle.load(open(pickleOut, 'rb'))
+        plotDict(dic, SHOW)
+        return
+
+    # === PROCESS SINGLE ===
+    if SINGLE:
+        global b
+        inter = 100
+        generate(N, d, b, A, angle=None, interrupt=inter, out_q=None)
         return
 
     # === TEST ===
@@ -140,14 +160,14 @@ def main():
 
                     resList.append( percListFit[-1] )
 
-                    plotFigure(fig, ax, timeListFit, percListFit, xlabel=r'time [ns]', ylabel=r'Recombination [%]', label=None, title=titleList[m], color=color)
+                    plotFigure(fig, ax, timeListFit, np.array(percListFit)*100, xlabel=r'time [ns]', ylabel=r'Recombination [%]', label=None, title=titleList[m], color=color)
                 
                 # PERPENDICULAR
                 else:
                     resList.append( percList[-1] )
 
                 # No label, use colorbar
-                plotFigure(fig, ax, timeList, percList, xlabel=r'time [ns]', ylabel=r'Recombination [%]', label=None, title=titleList[m], color=color)
+                plotFigure(fig, ax, timeList, np.array(percList)*100, xlabel=r'time [ns]', ylabel=r'Recombination [%]', label=None, title=titleList[m], color=color)
 
             # Show diffusion loss
             if not isinstance(resList[0], float):
@@ -155,68 +175,117 @@ def main():
             else:
                 resList = [1 - r for r in resList]
 
-            plotFigure(figRes, axRes, bList, resList, xlabel=r'b [m]', ylabel=r'Diffusion loss [%]', label=titleList[m])
+            
+            # Fit result curve
+            print len(bList), len(resList)
+            try:
+                p0 = [.08, .3]
+                popt, pcov = curve_fit(lambda x, a, b: parallelFit(x, 1., a, b), bList, resList, p0=p0)
+                perr = np.sqrt( np.diag(pcov) )
+            except:
+                popt = p0
+                perr = [0, 0]
+                # continue
+
+            print 'Fit result', popt, perr
+            a, b = popt
+        
+            bListFit = np.linspace(0, bList[-1], 1000) 
+            resListFit = parallelFit(bListFit, 1., a, b)
+
+            # plotFigure(figRes, axRes, bListFit, np.array(resListFit)*100, xlabel=r'b [m]', ylabel=r'Diffusion loss [%]', color=colorList[m])
+            plotFigure(figRes, axRes, bList, np.array(resList)*100, xlabel=r'b [m]', ylabel=r'Diffusion loss [%]', label=titleList[m], color=colorList[m])
 
         raw_input('')
         return
 
-    # === GET RESULTS ===
+    getResults('b')
+    return
+
+# === GET RESULTS ===
+# Loop over paraneters and store results to dict
+def getResults(param='b'):
+    # Run over bList
     # Create figure to use in plots
     fig = plt.figure()
     ax = fig.add_axes([0.1, 0.1, 0.7, 0.8])
     # Add colorbar
     axCBar = fig.add_axes([0.85, 0.1, 0.05, 0.8])
 
-    bList = np.linspace(1.e-7, 30.e-7, 30)
-    getColorBar(axCBar, bList[0], bList[-1], 'b [m]')
+    # bList = np.linspace(1.e-7, 30.e-7, 10)
+    if param == 'b':
+        paramList = np.linspace(1.e-8, 30.e-8, 10)
+        colorBarLabel = 'b [m]'
+    elif param == 'angle':
+        paramList = np.linspace(0., np.pi, 5)
+        colorBarLabel = 'Theta (rad)'
+
+    #bList = [1.e-7, 2.e-7]
+    # getColorBar(axCBar, bList[0], bList[-1], 'b [m]')
+    getColorBar(axCBar, paramList[0], paramList[-1], 'b [m]')
 
     manager = multiprocessing.Manager()
     out_q = manager.Queue()
 
     procs = []
-    for b in bList:
-        if REPEAT > 1:
-            target = generateRepeat
+    # for b in bList:
+    for para in paramList:
+        if param == 'b':
+            global angle
+            b = para
         else:
-            target = generate
+            global b
+            angle = para
 
-        p = multiprocessing.Process(target=target, args=(N, d, b, A, INTERRUPT, out_q, REPEAT))
+        if REPEAT > 1:
+            p = multiprocessing.Process(target=generateRepeat, args=(N, d, b, A, angle, INTERRUPT, out_q, REPEAT))
+        else:
+            p = multiprocessing.Process(target=generate, args=(N, d, b, A, angle, INTERRUPT, out_q))
+
         procs.append(p)
         p.start()
 
     resultDict = {}
     resultList = []
-    bResList = []
+    # bResList = []
+    paramResList = []
     timeListList, percListList = [], []
-    for i in range(len(bList)):
+
+    # for i in range(len(bList)):
+    for i in range(len(paramList)):
         resultDict.update(out_q.get())
 
-        bRes = resultDict['b']
-        bResList.append( bRes )
+        # bRes = resultDict['b']
+        # bResList.append( bRes )
+        paramRes = resultDict[param]
+        paramResList.append( paramRes )
         timeList, percList = resultDict['t'], resultDict['p']
         timeListList.append( timeList ), percListList.append( percList )
 
-        color = getColor(len(bList), bList.index(bRes))
-        plotFigure(fig, ax, timeList, percList, xlabel=r'time [ns]', ylabel=r'Recombination [%]', color=color)
+        # color = getColor(len(bList), list(bList).index(bRes))
+        color = getColor(len(paramList), list(paramList).index(paramRes))
+        plotFigure(fig, ax, timeList, np.array(percList)*100, xlabel=r'time [ns]', ylabel=r'Recombination [%]', color=color)
 
     for p in procs:
         p.join()
 
     # Order lists
-    zipped = zip(bResList, timeListList, percListList)
+    # zipped = zip(bResList, timeListList, percListList)
+    zipped = zip(paramResList, timeListList, percListList)
     zipped.sort()
-    bResList, timeListList, percListList = zip(*zipped)
+    # bResList, timeListList, percListList = zip(*zipped)
+    paramResList, timeListList, percListList = zip(*zipped)
 
     # Store lists to file
-    resultDict = {'b': bResList, 'p': percListList, 't': timeListList}
+    # resultDict = {'b': bResList, 'p': percListList, 't': timeListList}
+    resultDict = {param: paramResList, 'p': percListList, 't': timeListList}
     cPickle.dump(resultDict, open(resultOut, 'wb'))
-
     raw_input('')
 
-def generateRepeat(N, d, b, A, interrupt=False, out_q=None, repeat=1):
+def generateRepeat(N, d, b, A, angle=None, interrupt=False, out_q=None, repeat=1):
     percListList = []
     for k in range(repeat):
-        timeList, percList = generate(N, d, b, A, interrupt, None)
+        timeList, percList = generate(N, d, b, A, angle, interrupt, None)
         percListList.append( percList )
 
     # Get list with minimum length
@@ -233,7 +302,7 @@ def generateRepeat(N, d, b, A, interrupt=False, out_q=None, repeat=1):
 
     return timeList, percList
 
-def generate(N, d, b, A, interrupt=False, out_q=None):
+def generate(N, d, b, A, angle=None, interrupt=False, out_q=None):
     if PARALLEL:
         tt = d / vD
     else:
@@ -241,7 +310,7 @@ def generate(N, d, b, A, interrupt=False, out_q=None):
 
     # Generate Xe+ positions
     print 'Generate initial Xe+ positions...',
-    XePosList = initialDistribution(N, d, b, PARALLEL, GAUSS)
+    XePosList = initialDistribution(N, d, b, angle, PARALLEL, GAUSS)
     print 'Done!'
 
     # Create cKD tree
@@ -259,8 +328,11 @@ def generate(N, d, b, A, interrupt=False, out_q=None):
 
     # Generate electrons and check for intersection
     print 'Generate initial e positions...',
-    ePosList = initialDistribution(N, d, b, PARALLEL, GAUSS) # , XeTree, A)
-    
+    ePosList = initialDistribution(N, d, b, angle, parallel=PARALLEL, gauss=GAUSS, tree=XeTree, A=A)
+    print 'Done!'
+    print 'Fill e KD tree...',
+    xyz = np.c_[np.array(ePosList)[:,0], np.array(ePosList)[:,1], np.array(ePosList)[:,2]]
+    eTree = spatial.cKDTree(xyz)
     print 'Done!'
     print
 
@@ -271,7 +343,7 @@ def generate(N, d, b, A, interrupt=False, out_q=None):
 
     if SHOW:
         # === PLOT INIT ===
-        fig, h, hBottom, hTop, hRight = plotInit(XePosList, timeList, NList)
+        fig, h, hBottom, hTop, hRight = plotInit(XePosList, timeList, NList, tt)
 
     if SAVE:
         posDict = {}
@@ -300,7 +372,7 @@ def generate(N, d, b, A, interrupt=False, out_q=None):
         # s = time.clock()
         for ePos in ePosList:
             # Drift the electron
-            ePosNew = driftElectron(ePos, [Dt, Dt, Dl], vD, dt)
+            ePosNew = driftElectron(ePos, [Dt, Dt, Dl], vD, dt, eTree, XeTree, ePosList, XePosList)
 
             # Check for intersection only if electron is close
             # enough to the column
@@ -340,15 +412,17 @@ def generate(N, d, b, A, interrupt=False, out_q=None):
         XePosList = list([XePos for u, XePos in enumerate(XePosList) if u not in XeRemoveIdx])
 
         # Save only every 100th frame
-        if not i % 100:
-            if SAVE:
-                # Store Xe+ & e positions
-                posDict['Xe'][t] = XePosList
-                posDict['e'][t] = ePosList
+        # if not i % 10:
+        if SAVE:
+            # Store Xe+ & e positions
+            posDict['Xe'][t] = XePosList
+            posDict['e'][t] = ePosList
 
         # Works faster than expected
         xyz = np.c_[np.array(XePosList)[:,0], np.array(XePosList)[:,1], np.array(XePosList)[:,2]]
         XeTree = spatial.cKDTree(xyz)
+        xyz = np.c_[np.array(ePosList)[:,0], np.array(ePosList)[:,1], np.array(ePosList)[:,2]]
+        eTree = spatial.cKDTree(xyz)
 
         # Number of electrons vs. time
         timeList.append(t*1.e9)
@@ -369,7 +443,7 @@ def generate(N, d, b, A, interrupt=False, out_q=None):
                     break
 
         if SHOW:
-            updatePlot(fig, h, hBottom, hTop, hRight, t, i, timeList, NList, ePosList, XePosList)
+            updatePlot(fig, h, hBottom, hTop, hRight, t, i, timeList, NList, ePosList, XePosList, show=SHOW)
 
     # After the time loop is done, count remaining particles 
     print
@@ -415,7 +489,12 @@ def driftElectronTest():
     # plt.plot(time, dx)
     f.show()
 
-def getParticle(d, b, parallel, gauss):
+def getParticle(d, b, parallel, gauss, angle=None):
+    # Rotation matrix
+    if angle:
+        c, s = np.cos(angle), np.sin(angle)
+        R = np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+
     if gauss:
         if parallel:
             # Get the x and y position
@@ -428,6 +507,8 @@ def getParticle(d, b, parallel, gauss):
         else:
             x = np.random.uniform(-.5*d, .5*d)
             y, z = np.random.normal(0, b, 2)
+            # if angle:
+            #    return tuple(np.dot(R, np.array([x, y, z])))
 
     # Uniform
     else:
@@ -452,20 +533,22 @@ def getRandomRadius(r):
 # N - number of particles
 # d - length of the axis in cm
 # b - standard deviation of the distance to the axis
-def initialDistribution(N, d, b, parallel=True, gauss=True, tree=None, A=None):
+def initialDistribution(N, d, b, angle=None, parallel=True, gauss=True, tree=None, A=None):
     if tree and not A:
         print 'Please pecify the recombination radius when using a tree!'
         return False
 
     posList = []
     for i in range(N):
-        x, y, z = getParticle(d, b, parallel, gauss)
+        x, y, z = getParticle(d, b, parallel, gauss, angle)
         if tree:
             intersect, idx = checkIntersect((x, y, z), tree, A)
             while intersect:
-                x, y, z = getParticle(d, b, parallel, gauss)
+                x, y, z = getParticle(d, b, parallel, gauss, angle)
+                intersect, idx = checkIntersect((x, y, z), tree, A)
 
-        posList.append( getParticle(d, b, parallel, gauss) )
+        # posList.append( getParticle(d, b, parallel, gauss, angle) )
+        posList.append((x, y, z))
 
     return posList
 
@@ -476,13 +559,15 @@ def checkIntersect(ePos, XeTree, A, k=1, ePosOld=None, XePosList=None):
     if not ePosOld:
         searchDist = np.inf
 
-        dist, idx = XeTree.query(np.array([ePos]), k=k, n_jobs=4)
+        dist, idx = XeTree.query(np.array([ePos]), k=k, n_jobs=0)
         dist, idx = dist[0], idx[0]
         if not isinstance(dist, float):
             dist, idx = float(dist[-1]), int(idx[-1])
 
         if dist <= A:
             return True, idx
+        else:
+            return False, [0]
 
     # Point - area intersection
     else:
@@ -538,14 +623,50 @@ def getAltitude(a, b, c):
 
     return h
 
-def driftElectron(pos, D, vD, dt):
+def driftElectron(pos, D, vD, dt, eTree=None, XeTree=None, ePosList=None, XePosList=None):
     newPos = []
     for i, p in enumerate(pos):
         sigma = np.sqrt( 2*D[i]*dt )
         newPos.append( p + np.random.normal(0, sigma, 1)[0] )
 
-    # Electric field in z-direction
-    newPos[2] -= vD * dt
+    # Calculate couloumb interactions
+    if eTree and XeTree and ePosList and XePosList:
+        from scipy import constants
+        epsilon = 1.95
+        coulombRange = 1.e-8
+
+        eDist, eIdx = eTree.query(np.array([pos]), n_jobs=0, k=10, distance_upper_bound=coulombRange)
+        # print eDist, eIdx
+        # Remove first element, as it is the electron itself
+        eDist, eIdx = eDist[0][1:], eIdx[0][1:]
+        eDist, eIdx = filterQuery(eDist, eIdx, len(ePosList))
+        
+        XeDist, XeIdx = XeTree.query(np.array([pos]), n_jobs=0, k=10, distance_upper_bound=coulombRange)
+        XeDist, XeIdx = XeDist[0], XeIdx[0]
+        # print XeDist, XeIdx
+        XeDist, XeIdx = filterQuery(XeDist, XeIdx, len(XePosList))
+
+        constantTerm = constants.e/(4*np.pi*constants.epsilon_0*epsilon)
+        eTerm = np.array( [0, 0, 0] )
+        for i in range(len(eDist)):
+            vec = np.array(ePosList[eIdx[i]]) - np.array(pos)
+            eTerm = vec / (np.linalg.norm( vec )**3)
+
+        XeTerm = np.array( [0, 0, 0] )
+        for i in range(len(XeDist)):
+            vec = np.array(XePosList[XeIdx[i]]) - np.array(pos)
+            XeTerm = vec / (np.linalg.norm( vec )**3)
+
+        if np.isnan(eTerm).any() or np.isnan(XeTerm).any():
+            newPos[2] -= vD * dt
+        else:
+            eField = constantTerm * (XeTerm - eTerm) + X*np.array([0, 0, -1])
+            newPos = tuple(np.array(newPos) + mobility * eField * dt)
+    
+    # No interaction, consider only electric field
+    else:
+        # Electric field in z-direction
+        newPos[2] -= vD * dt
 
     return newPos
 
@@ -576,7 +697,8 @@ def spatialProbability(ePos, XePos, D, A, vD, t):
 
     return xProb * yProb * zProb
 
-def plotInit(XePosList, timeList, NList):
+# === PLOT ===
+def plotInit(XePosList, timeList, NList, tt):
     fig = plt.figure(figsize=(10, 5))
 
     # Plot area 
@@ -694,8 +816,9 @@ def plotInit(XePosList, timeList, NList):
     else:
         axRight.set_ylim(-5*b, 5*b)
 
+    # Bottom
     axBottom.set_xlim(0., tt*1.e9) # in [ns]
-    # axBottom.set_yscale('symlog', nonposx='clip')
+    axBottom.set_yscale('symlog', nonposx='clip')
     axBottom.set_ylim(N_rem, N*1.1) 
 
     return fig, h, hBottom, hTop, hRight
@@ -749,7 +872,8 @@ def updatePlot(fig, h, hBottom, hTop, hRight, t, i, timeList, NList, ePosList, X
     if show:
         fig.show()
 
-def plotDict(d):
+# Plot data stored in dictionary
+def plotDict(d, show=False):
     timeList = []
     XePosListList, ePosListList = [], []
     for key in d['e'].keys():
@@ -757,15 +881,18 @@ def plotDict(d):
         XePosListList.append( d['Xe'][key] ), ePosListList.append( d['e'][key] )
 
     # Sort lists
-    sortedList = np.array(sorted(zip(timeList, XePosListList, ePosListList)))
-    timeList, XePosListList, ePosListList = sortedList[:,0], sortedList[:,1], sortedList[:,2]
+    zipped = zip(timeList, XePosListList, ePosListList)
+    zipped.sort()
+    timeList, XePosListList, ePosListList = zip(*zipped)
+    # sortedList = np.array(sorted(zip(timeList, XePosListList, ePosListList)))
+    # timeList, XePosListList, ePosListList = sortedList[:,0], sortedList[:,1], sortedList[:,2]
 
     Nlist = [len(ePosListList[0])]
 
     print 'Start plotting'
-    fig, h, hBottom, hTop, hRight = plotInit(XePosListList[0], [0], Nlist)
+    fig, h, hBottom, hTop, hRight = plotInit(XePosListList[0], [0], Nlist, timeList[-1])
     for i, t in enumerate(timeList[1:]):
-        ePosList, XePosList = ePosListList[i+1], ePosListList[i+1]
+        ePosList, XePosList = ePosListList[i+1], XePosListList[i+1]
 
         # Status bar
         sys.stdout.write('\r')
@@ -774,8 +901,8 @@ def plotDict(d):
         sys.stdout.flush()
 
         # Plot
+        updatePlot(fig, h, hBottom, hTop, hRight, t, i+1, np.array(timeList[:i+1])*1.e9, Nlist, ePosList, XePosList, show)
         Nlist.append( len(ePosList) )
-        updatePlot(fig, h, hBottom, hTop, hRight, t, i+1, timeList[:i+1], Nlist, ePosList, XePosList)
 
 def plotFigure(fig, ax, timeList, percList, xlabel=None, ylabel=None, label=None, title=None, color=None):
     timeList, percList = np.array(timeList), np.array(percList)
@@ -805,6 +932,7 @@ def plotFigure(fig, ax, timeList, percList, xlabel=None, ylabel=None, label=None
     fig.canvas.draw()
     fig.show()
 
+# === COLORS ===
 def getColorBar(ax, cbMin, cbMax, label=None):
     # Plot colorbar
     cmap = mpl.cm.get_cmap('viridis')
@@ -823,8 +951,34 @@ def getColor(N, idx):
     norm = mpl.colors.Normalize(vmin=0.0, vmax=N - 1)
     return cmap(norm(idx))
 
+# === SUPPORT ===
+def filterQuery(dist, idx, length):
+    elemList = np.array( [item for item in zip(idx, dist) if item[0] != length] )
+    if elemList.size:
+        return elemList[:,1], elemList[:,0].astype('int')
+    else:
+        return [], []
+
+# === FIT ===
 def parallelFit(x, A, a, b): 
-    return A/(1 + a*np.sqrt(1./x**b))
+    return A / (1 + np.exp(a*x**b))
+    # return A/(1 + a*np.sqrt(1./x**b))
+
+# === STOPPING POWER ===
+# E in [keV]
+def getDeltaE(deltaX, E):
+    import scipy.integrate
+
+    # Stopping power
+    density = 3.057 # g/cm^3
+    x, y = np.loadtxt('stopping_power.dat', delimiter='\t', usecols=range(2), unpack=True)
+    x = np.array( x ) * 1.e3                # Convert MeV to keV
+    y = np.array( y ) * density * 1.e3      # Multiply with density
+
+    # Filter by energy
+    x, y = zip(*[item for item in zip(x, y) if item[0] <= E])
+
+    dTrack = scipy.integrate.simps(1./y, x, even='avg')
 
 def get_args():
     ap = argparse.ArgumentParser(description=' ')
@@ -836,9 +990,10 @@ def get_args():
     ap.add_argument('-mp', '--makeplots', help="Make plots. Use 'save' before using this command", action='store_true')
     ap.add_argument('-t', '--test', help="Test the simulation", action='store_true')
     ap.add_argument('-pr', '--printresults', help='Show results', action='store_true')
+    ap.add_argument('-si', '--single', help='Process only single parameter set', action='store_true')
 
     args = ap.parse_args()
-    return args.uniform, args.parallel, args.show, args.save, args.makeplots, args.test, args.printresults
+    return args.uniform, args.parallel, args.show, args.save, args.makeplots, args.test, args.printresults, args.single
 
 if __name__ == '__main__':
     main()
