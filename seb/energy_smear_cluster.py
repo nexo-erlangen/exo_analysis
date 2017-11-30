@@ -345,15 +345,15 @@ def fillEnergy(t, res, bins, hRange, art='ss', MC=True):
             else:
                 # E = es.energy_ms
                 # E = np.sum( np.array(es.cluster_energy) ) * 2614.5 / 2651.59 # 2614.5 / 2526.97
-                E = np.array( es.cluster_energy ) * 2614.5 / 2526.97
+                E = np.array( es.cluster_energy ) * 2614.5 / 2534.17 # 2614.5 / 2526.97
         else:
             # E = getNewEnergy(res, es.energy_mc)[0]
-            energyCorrMC = 2614.5 / 2601.87
+            energyCorrMC = 2614.5 / 2608.87 # 2614.5 / 2601.87
             # energyCorrMC = 2614.5 / 2526.97
             # E = getNewEnergy(res, np.sum(np.array(es.cluster_energy)))[0] * energyCorrMC
             energy = np.array( es.cluster_energy ) * energyCorrMC
             energyFrac = energy/sum(energy)
-            E = getNewEnergy(res, sum(energy)) * energyFrac
+            E = float(getNewEnergy(res, sum(energy))) * energyFrac
             if E[0] == 0 or E[1] == 0:
                 continue
 
@@ -364,7 +364,6 @@ def fillEnergy(t, res, bins, hRange, art='ss', MC=True):
         # x, y, z = ps.getClusterPos(es, cut=True)
         so = [es.standoff_distance]*2
 
-        print E
         # Elist.append( E )
         Elist += list( E )
         # SOlist.append( so )

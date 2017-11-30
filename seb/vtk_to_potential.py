@@ -380,7 +380,7 @@ class localRBF:
 
 	def getRBF(self, point, dist):
 		point = np.array(point)
-		distances, pIdx = self.tree.query(np.array( [point] ), k=self.NN, n_jobs=-1, distance_upper_bound=dist)
+		distances, pIdx = self.tree.query(np.array( [point] ), k=self.NN, n_jobs=0, distance_upper_bound=dist)
 		distances = distances[:, 1:]
 		self.distances = distances
 
@@ -477,7 +477,7 @@ def createTree(posArray):
 def getNeighbors(tree, xyz, point):
 	point = np.array(point)
 
-	distances, points = tree.query(point, k=2, n_jobs=-1)		# use multithreading
+	distances, points = tree.query(point, k=2, n_jobs=0)		# use multithreading
 	# distances = distances[:, 1:]					# Remove k=1 distances
 	# step = np.mean(distances)
 

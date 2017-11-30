@@ -1,4 +1,6 @@
 import numpy as np
+import scipy.special
+import scipy.optimize
 import plot_support as ps
 
 import ROOT
@@ -8,7 +10,12 @@ ROOT.gSystem.Load('/home/hpc/capm/mppi025h/EXOoffline/EXOFitting/EXO_Fitting/lib
 pdfOut = 'energy_smear_nodiff2.pdf'
 stdResolution = [1.81960744, 0.00306382, 0.03331489]
 
+# Set when runs of phase2 are used
 PHASE2 = False
+# Set to use cluster energies instead of rotated energies
+CLUSTER = True
+# Set to use light energies
+LIGHT = False
 
 def energySmear(tData, dataList, tMC, FV, art='ss'):
     import re
@@ -17,8 +24,8 @@ def energySmear(tData, dataList, tMC, FV, art='ss'):
     # raw_input('')
     # return
 
-    bins = [100, 20]
-    hRange = [[2000, 3000], [0, 200]]
+    bins = [400, 20]
+    hRange = [[200, 3500], [0, 200]]
 
     ROOT.EXOFiducialVolume.SetUserHexCut(*FV)
     ROOT.gROOT.cd()
@@ -34,18 +41,29 @@ def energySmear(tData, dataList, tMC, FV, art='ss'):
     if PHASE2:
         cutData = re.sub('!EventSummary.isDiagonallyCut\(\) && ', '', cutData)
     # cutData += ' && ( (energy_%s > 1000 && energy_%s < 1200) || (energy_%s > 1561 && energy_%s < 1673 ) || (energy_%s > 1800 && energy_%s < 2000) )' % (art, art, art, art, art, art)
+
+    from cluster import plotThree
+    tDataCut = tData.CopyTree( cutData )
+    Elist, SOlist = fillEnergy(tDataCut, None, bins, hRange, art, False, CLUSTER, LIGHT, False)
+
+    # plotThree(Elist, SOlist, bins=(80, 20), xlabel=r'Energy [keV]', ylabel=r'Standoff distance [mm]', title=None, pp=None, interpolate=False, show=True, project=True, kde=False)
+    # raw_input('')
     
     print cutData
     tDataCut = tData.CopyTree( cutData )
-    hData, hDataE, hDataSO, xData, yData = fillEnergy(tDataCut, None, bins, hRange, art, False)
+    hData, hDataE, hDataSO, xData, yData = fillEnergy(tDataCut, None, bins, hRange, art, False, CLUSTER, LIGHT)
     
+    # getCalibration(xData, hDataE, 2614.5)
+    # raw_input('')
+
     # Get resolution of data by fits
-    # resolution = getResolution(xData, hDataE, src='charge', art=art)
-    resolution = [-.000123185451, 74.7268349, 0.0270834510]
+    resolution = getResolution(xData, hDataE, src='Th', art=art)
+    # resolution = [-.000123185451, 74.7268349, 0.0270834510]
 
     # Standoff vs. energy
     # plotEnergy(hData, xData, yData)
-    plotEnergyThree(hData, xData, yData, False, pp)
+    # plotEnergyThree(hData, xData, yData, False, pp)
+    raw_input('')
 
     # === MC ===
     print 'Processing MC...'
@@ -56,9 +74,12 @@ def energySmear(tData, dataList, tMC, FV, art='ss'):
     tMCCut = tMC.CopyTree( cutMC )
 
     # Method using one resolution
-    hMC, hMCE, hMCSO, xMC, yMC = fillEnergy(tMCCut, resolution, bins, hRange, art, True)
+    # hMC, hMCE, hMCSO, xMC, yMC = fillEnergy(tMCCut, resolution, bins, hRange, art, True, CLUSTER)
+    # resolution = getResolution(xMC, hMCE, src='charge', art=art)
+    # return 
+
     # Method using multiple resolutions
-    # hMC, hMCE, hMCSO, xMC, yMC = smearMCRandom(dataList, tMCCut, bins, hRange, art)
+    hMC, hMCE, hMCSO, xMC, yMC = smearMCRandom(dataList, tMCCut, bins, hRange, art)
 
     # === PLOTS ===
     plotEnergyStandoff(hData, hMC, xData, bins, hRange, pp)
@@ -84,6 +105,110 @@ def energySmear(tData, dataList, tMC, FV, art='ss'):
 
     pp.close()
     raw_input('')
+
+# === GET CALIBRATION ===
+def getColor(c, N, idx):
+    import matplotlib as mpl
+    cmap = mpl.cm.get_cmap(c)
+    norm = mpl.colors.Normalize(vmin=0.0, vmax=N - 1)
+    return cmap(norm(idx))
+
+def getCalibration(energyBins, energyValues, nominal):
+    import peak_finder as peak
+
+    import matplotlib.pyplot as plt
+    from matplotlib import rc
+    rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
+    rc('text', usetex=True)
+    print 'Get calibration value from data...'
+
+    import seaborn as sns
+    sns.set_style('whitegrid', {'axes.grid' : False})
+    sns.set(style = 'ticks')
+    paper_rc = {'lines.linewidth': 1.5}
+    sns.set_context("paper", rc = paper_rc)
+
+    binWidth = energyBins[1] - energyBins[0]
+    energyBins = np.array( energyBins ) + .5*binWidth
+
+    # Cut away low energy background
+    energyBins, energyValues = zip(*[item for item in zip(energyBins, energyValues) if item[0] > 500])
+
+    # Plot showing spectrum
+    fig, ax = plt.subplots()
+    sns.despine(fig=fig, ax=ax, left=True)
+    ax.set_yticks([])
+    ax.plot(energyBins, energyValues)
+    fig.show()
+
+    # print peak.peakdet(energyValues, .000000000001, energyBins)
+    # print peak.peakdet(np.sin(np.array(range(100))), 1, np.array(range(100)))
+    # raw_input('')
+
+    # Repeat multiple times, start with a small value of sigma
+    sigma = 200 # keV
+    popt = [energyBins[np.argmax(energyValues)], sigma, 1., 1., 1.]
+    corrFacTotal = 1.
+
+    colors = sns.cubehelix_palette(light=.6, dark=.2, rot=-.4, n_colors=5).as_hex()
+
+    for i in range(5):
+        # Find position of full absorption peak
+        peakIdx = np.argmax( energyValues )
+        print 'Maximum energy %f' % energyBins[peakIdx]
+
+        # Get energies around the peak value
+        sigma = abs( popt[1] )
+        en, val = zip(*[item for item in zip(energyBins, energyValues) if abs(item[0] - energyBins[peakIdx]) < 3.2 * sigma])
+        print en, val
+
+        # Fit
+        p0 = popt
+        try:
+            popt, pcov = scipy.optimize.curve_fit(gaussErf, en, val, p0=p0)
+            perr = np.sqrt(np.diag(pcov))
+        except:
+            perr = [0] * len(popt)
+
+        # Plot
+        mu, sig, a, b, c = popt
+        valFit = gaussErf(en, *popt)
+        yErf = b * (scipy.special.erf((en+shift(a, b, mu, sig) - mu) / (np.sqrt(2) * sig))) + abs(b)
+        yGauss = gauss(en+shift(a, b, mu, sigma), mu, sig, a, c)
+        s = shift(popt[2], popt[3], popt[0], abs(popt[1]))
+        print s
+
+        plt.plot(en, val, c=colors[i])
+        plt.plot(en, valFit, c=colors[i])
+        plt.plot(en, yErf, ls='--', c=colors[i])
+        plt.plot(en, yGauss, ls='--', c=colors[i])
+        # plt.show()
+
+        corrFac = nominal / (mu) # - s)
+        corrFacTotal *= corrFac
+        print corrFac
+
+        # Scale spectrum with nominal value
+        energyBins = np.array(energyBins) * corrFac
+
+        # Get new sigma
+        popt[0:2] *= corrFac
+        print popt
+        print
+
+    ax.set_xlim(nominal - 700, nominal + 700)
+    ax.set_xlabel(r'Energy [keV]')
+
+    symbolList = ['mu', 'sigma', 'a', 'b', 'c']
+    print 'Results for peak @%d keV' % popt[0]
+    print '---------'
+    for j, p in enumerate(popt):
+        print '%s = %.2f +/- %.2f' % (symbolList[j], p, perr[j])
+    print 'Shift = %.2f' % shift(popt[2], popt[3], popt[0], popt[1])
+
+    print 'Scale factor: %f' % corrFacTotal
+
+    plt.show()
 
 # === SS FRAC ===
 def SSfrac(dataList, tData, tMC, FV, art='energy'):
@@ -303,7 +428,7 @@ def plotSSfrac(x, dataFrac, dataFracErr, MCFrac, MCFracErr, art='standoff', pp=N
 
 # == FILL ENERGY ==
 # Get histograms
-def fillEnergy(t, res, bins, hRange, art='ss', MC=True):
+def fillEnergy(t, res, bins, hRange, art='ss', MC=True, cluster=False, light=False, hist=True):
     Elist = []
     SOlist = []
     N = t.GetEntries()
@@ -312,18 +437,30 @@ def fillEnergy(t, res, bins, hRange, art='ss', MC=True):
         es = t.EventSummary
         if not MC:
             if art == 'ss':
-                # E = es.energy_ss
-                E = np.sum( np.array(es.cluster_energy) )
+                if cluster:
+                    E = np.sum( np.array(es.cluster_energy) )
+                elif light:
+                    E = np.array( es.e_scint )
+                else:
+                    E = es.energy_ss
             else:
-                # E = es.energy_ms
-                E = np.sum( np.array(es.cluster_energy) ) * 2614.5 / 2526.97 # 2614.5 / 2651.59 
+                if cluster:
+                    E = np.sum( np.array(es.cluster_energy) )# * 2614.5 / 2534.17 # 2614.5 / 2651.59 
+                elif light:
+                    E = np.array( es.e_scint )
+                else:
+                    E = es.energy_ms
         else:
-            # E = getNewEnergy(res, es.energy_mc)[0]
-            energyCorrMC = 2614.5 / 2601.87
+            # energyCorrMC = 2614.5 / 2608.31
             # E = getNewEnergy(res, np.sum(np.array(es.cluster_energy)))[0] * energyCorrMC
-            energy = np.array( es.cluster_energy ) * energyCorrMC
-            # energyFrac = energy/sum(energy)
-            E = getNewEnergy(res, sum(energy))[0] # * energyFrac
+            if cluster:
+                energy = np.array( es.cluster_energy ) * energyCorrMC
+                E = getNewEnergy(res, sum(energy))[0]
+            elif light:
+                energy = np.array( es.e_scint )
+                E = getNewEnergy(res, energy)[0]
+            else:
+                E = getNewEnergy(res, es.energy_mc)[0]
 
             if not (E >= hRange[0][0] and E <= hRange[0][1]):
                 continue
@@ -333,6 +470,9 @@ def fillEnergy(t, res, bins, hRange, art='ss', MC=True):
 
         Elist.append( E )
         SOlist.append( so )
+
+    if not hist:
+        return Elist, SOlist
 
     hE, edges = np.histogram(np.array(Elist), bins[0], hRange[0])
     hSO, edges = np.histogram(np.array(SOlist), bins[1], hRange[1])
@@ -554,10 +694,17 @@ def getNewEnergy(res, E):
 # === GETRESOLUTION ===
 # Determine resolution of data by fitting gauss distributions
 def getResolution(energyBins, energyValues, src='Th', art='ss'):
+    from plot_functions import autoscale_y
     import matplotlib.pyplot as plt
     from matplotlib import rc
     rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
     rc('text', usetex=True)
+
+    import seaborn as sns
+    sns.set_style('whitegrid', {'axes.grid' : True})
+    sns.set(style = 'ticks')
+    paper_rc = {'lines.linewidth': 2}
+    sns.set_context("paper", rc = paper_rc)
 
     import scipy.special
     import scipy.optimize
@@ -569,6 +716,7 @@ def getResolution(energyBins, energyValues, src='Th', art='ss'):
         energies = [2614, 2103, 1620, 1078, 725]
         # Fit ranges
         # fitRange = [[2450, 2800], [1990, 2200], [1510, 1700], [1015, 1200], [800, 950]]
+        sigmaList = [5, 5, 5, 2, 2]
         if art == 'ss':
             fitRange = [[2465, 2800], [1990, 2200], [1480, 1760], [810, 920], [650, 800]]
             initPars = [[2614, 40, 1.e3, 5.e2, 1.e2], [2103, 40, 5.e2, 2.5e2, 1.e2], [1620, 40, 5.e2, 2.5e2, 1.e2], [855, 30, 10.e3, 5.e3, 20.e3], [725, 40, 100, -10, 120]]
@@ -580,6 +728,11 @@ def getResolution(energyBins, energyValues, src='Th', art='ss'):
 
         # Initial parameters
         # initPars = [[2614, 40, 1.e3, 5.e2, 1.e2], [2103, 40, 5.e2, 2.5e2, 1.e2], [1620, 40, 5.e2, 2.5e2, 1.e2], [1170, 30, 4000, 500., 8000], [850, 40, 100, -10, 120]]
+    elif src =='Co':
+        energies = [1173, 1332]
+        fitRange = [[900, 1400], [1100, 1550]]
+        initPars = [[1173, 80, 1.e3, 5.e2, 1.e2], [1332, 80, 5.e2, 2.5e2, 1.e2]]
+
     elif src =='charge':
         energies = [1510, 2014, 2532]
         # Fit ranges
@@ -590,7 +743,7 @@ def getResolution(energyBins, energyValues, src='Th', art='ss'):
             if PHASE2:
                 fitRange = [[1250, 1800], [1800, 2300], [2300, 3000]]
             else:
-                fitRange = [[1250, 1800], [1800, 2250], [2260, 2990]]
+                fitRange = [[1250, 1760], [1760, 2190], [2190, 2990]]
             initPars = [[1560, 80, 1.e3, 5.e2, 1.e2], [2100, 80, 5.e2, 2.5e2, 1.e2], [2615, 60, 175.e2, -1.e3, 20.e3]]
         else:
             return False
@@ -603,38 +756,39 @@ def getResolution(energyBins, energyValues, src='Th', art='ss'):
     binWidth = energyBins[1] - energyBins[0]
     energyBins = np.array( energyBins ) + 0.5 * binWidth
 
-    # Fit functions
-    def gauss(x, mu, sigma, A, off):
-        return A * np.exp( -(x-mu)**2 / (2.*sigma**2) ) + off
-
-    def shift(a, b, mu, sigma):
-        return np.sqrt(2./np.pi)*float(b)/a*sigma
-
-    def gaussErf(x, mu, sigma, a, b, c):
-        return gauss(x+shift(a, b, mu, sigma), mu, sigma, a, c) + b * scipy.special.erf((x+shift(a, b, mu, sigma) - mu) / (np.sqrt(2) * sigma)) + abs(b)
-
     # To present results
     symbolList = ['mu', 'sigma', 'a', 'b', 'c']
     symbolListSigma = ['sigma', 'a', 'c']
     poptList = []
     perrList = []
     poptSigmaList = []
+    muList = []
 
     # Perform fits
+    fitRangePlot = []
     for i in range( len(energies) ):
         # Get data in range
-        lim = fitRange[i]
-        energy = [en for en in zip(energyBins, energyValues) if (en[0] >= lim[0] and en[0] <= lim[1])]
-        en, val = np.array(energy)[:,0], np.array(energy)[:,1]
-
-        # Get mean values of peaks
         p0 = initPars[i]
-        try:
-            popt, pcov = scipy.optimize.curve_fit(gaussErf, en, val, p0)
-            perr = np.sqrt(np.diag(pcov))
-        except:
-            popt = p0
-            perr = np.zeros(len(popt))
+        lim = fitRange[i]
+
+        for j in range(10):
+            # Get mean values of peaks
+            p0_ = p0 # initPars[i]
+            lim_ = lim
+            energy = [en for en in zip(energyBins, energyValues) if (en[0] >= lim_[0] and en[0] <= lim_[1])]
+            en, val = np.array(energy)[:,0], np.array(energy)[:,1]
+
+            try:
+                popt, pcov = scipy.optimize.curve_fit(gaussErf, en, val, p0_)
+                perr = np.sqrt(np.diag(pcov))
+            except:
+                popt = p0
+                perr = np.zeros(len(popt))
+
+            # popt = abs(popt)
+            lim = (popt[0] - sigmaList[i]*abs(popt[1]), popt[0] + sigmaList[i]*abs(popt[1]))
+            print lim
+        fitRangePlot.append( lim )
 
         poptList.append( popt )
         perrList.append( perr )
@@ -658,37 +812,50 @@ def getResolution(energyBins, energyValues, src='Th', art='ss'):
         # poptSigma = poptSigma
         perrSigma = np.sqrt(np.diag(pcovSigma))
 
+        sh = shift(popt[2], popt[3], popt[0], popt[1])
+        muList.append(popt[0] - sh)
         print 'Results for peak @%d keV' % p0[0]
         print '---------'
         for j, p in enumerate(popt):
             print '%s = %.2f +/- %.2f' % (symbolList[j], p, perr[j])
-        print 'Shift = %.2f' % shift(popt[2], popt[3], popt[0], popt[1])
+        print 'Shift = %.2f' % sh
         print '---------'
         for j, p in enumerate(poptSigma):
             print '%s = %.2f +/- %.2f' % (symbolListSigma[j], p, perr[j])
         print
 
     # Plot fit results
-    plt.plot(energyBins[:-1], energyValues)
+    pal = sns.color_palette("Set2", 10)
+    fig, ax = plt.subplots(figsize=(7, 3))
+    # ax.set_yscale('log', nonposy='clip')
+    fig.subplots_adjust(bottom=0.2)
+    sns.despine(fig=fig, ax=ax, left=True)
+    ax.set_yticks([])
+    ax.plot(energyBins[:-1], energyValues)
     for j, popt in enumerate(poptList):
         mu, sig, a, b, c = popt
 
-        lim = fitRange[j]
+        lim = fitRangePlot[j]
         x = np.linspace(lim[0], lim[1], 1000)
         y = gaussErf(x, *popt)
         yErf = b * (scipy.special.erf((x+shift(a, b, mu, sig) - mu) / (np.sqrt(2) * sig))) + abs(b)
-        yGauss = gauss(x+shift(a, b, mu, sigma), mu, sig, a, c)
+        yGauss = gauss(x+shift(a, b, mu, sigma), mu, sig, a, 0)
 
         # ySigma = gauss(x, popt[0], *poptSigmaList[j])
         # plt.plot(en, val, label='Data')
-        plt.plot(x, y, label='%s keV Peak' % initPars[j][0])
-        plt.plot(x, yErf, ls='--')
-        plt.plot(x, yGauss, ls='--')
+        ax.plot(x, y, label='%s keV Peak' % initPars[j][0], c='#51A882') # pal.as_hex()[0])
+        ax.plot(x, yErf, ls='--', c=pal.as_hex()[1])
+        ax.plot(x, yGauss, ls='--', c=pal.as_hex()[2])
         # plt.plot(x, ySigma)
-        plt.legend()
-    plt.xlabel('Energy [keV]')
-    plt.ylabel('Counts')
-    plt.show()
+        # plt.legend()
+    ax.set_xlabel('Energy [keV]')
+    # ax.set_xticks(list(ax.get_xticks()) + muList)
+    ax.set_xticks(muList)
+    ax.set_xlim(625, 2750)
+    autoscale_y(ax, 0.)
+    # ax.set_ylabel('Counts')
+    fig.show()
+    raw_input('')
 
     # Get resolution by fitting function to sigma
     mean = np.array( poptList )[:,0]
@@ -702,26 +869,39 @@ def getResolution(energyBins, energyValues, src='Th', art='ss'):
     def resFunc(x, p0, p1, p2):
         return np.sqrt(p0**2*x + p1**2 + p2**2*x**2)
 
-    p0 = [0.7, 28, 0.001]
-    popt, pcov = scipy.optimize.curve_fit(resFunc, mean, sigma, p0)
-    perr = np.sqrt(np.diag( pcov ))
+    # p0 = [0.7, 28, 0.001]
+    p0 = [-1.27328844e-05, 2.35919491e+01, 1.10567422e-02]
+    try:
+        popt, pcov = scipy.optimize.curve_fit(resFunc, mean, sigma, p0)
+        perr = np.sqrt(np.diag( pcov ))
+    except:
+        popt = p0
+        perr = [0] * len(p0) 
+        
     print 'Results for resolution:'
     print '---------'
     print popt, perr
 
     # Plot result
-    plt.clf()
+    # plt.clf()
+    fig2, ax2 = plt.subplots(figsize=(7, 3))
+    fig2.subplots_adjust(bottom=0.2)
+    sns.despine(fig=fig2, ax=ax2)
 
     # Data
-    plt.errorbar(mean, sigma, xerr=meanErr, yerr=sigmaErr, fmt='x', label='Data')
+    _, caps, _ = ax2.errorbar(mean, sigma, xerr=meanErr, yerr=sigmaErr, fmt='x', markersize=8, capsize=2, label='Data', mew=1)
+    for cap in caps:
+        cap.set_markeredgewidth(1)
 
     # Fit
     x = np.linspace(mean[-1] - 100, mean[0] + 100, 1000)
     y = resFunc(x, *popt)
     plt.plot(x, y, label='Fit')
-    plt.legend()
+    # plt.legend()
 
-    plt.xlabel(r'Energy')
+    ax2.set_xlim(625, 2750)
+
+    plt.xlabel(r'Energy [keV]')
     plt.ylabel(r'$\sigma$ [keV]')
     plt.show()
 
@@ -753,6 +933,7 @@ def getResolutionDB(runNum, art='ss'):
     res = [float(x) for x in re.findall("\d+\.\d+", resString)]
     return [np.sqrt(r) for r in res]
 
+# === GET XML ===
 def getXML(runNum, art='startTime'):
     import gzip, urllib2, xmltodict, ast
     from StringIO import StringIO
@@ -773,4 +954,14 @@ def getXML(runNum, art='startTime'):
 
     data = xmltodict.parse( data )
     return data['run'][art]
+
+# === FIT FUNCTIONS ===
+def gauss(x, mu, sigma, A, off):
+    return A * np.exp( -(x-mu)**2 / (2.*sigma**2) ) + off
+
+def shift(a, b, mu, sigma):
+    return np.sqrt(2./np.pi)*float(b)/a*sigma
+
+def gaussErf(x, mu, sigma, a, b, c):
+    return gauss(x+shift(a, b, mu, sigma), mu, sigma, a, c) + b * scipy.special.erf((x+shift(a, b, mu, sigma) - mu) / (np.sqrt(2) * sigma)) + abs(b)
 

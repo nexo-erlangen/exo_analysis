@@ -189,7 +189,7 @@ class localRBF:
                 
 		point = np.array(point)
                 # print point
-		distances, pIdx = self.tree.query(np.array( [point] ), k=self.NN, n_jobs=1, distance_upper_bound=dist)
+		distances, pIdx = self.tree.query(np.array( [point] ), k=self.NN, n_jobs=0, distance_upper_bound=dist)
 		# distances = distances[:, 1:]
 		self.distances = distances
 		

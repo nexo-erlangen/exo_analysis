@@ -29,7 +29,7 @@ import gen_ran_qsub as grq
 def main():
         start_time = time.time()
 
-	settings, histogram, ms, ss, plot, show, cart, nodiff, drawcyl, random, standoff, test, energy = get_args()
+	settings, histogram, ms, ss, plot, show, cart, nodiff, drawcyl, random, standoff, test, energy, split = get_args()
 	loadSettings('settings/', settings)
 	cyl = not cart
 
@@ -77,6 +77,9 @@ def main():
 				dataChain = getChain('dataTree', dataList)
 				mcChain = getChain('mcTree', mcList)
 
+                                getStandoffDistMan(mcChain, FV, type='ms', MC=True, bins=200)
+                                return
+
 				# Fill standoff histograms and save them to
 				# root files.
 
@@ -119,62 +122,65 @@ def main():
 			return
 
 	if drawcyl:
+            # No fiducial cut
+            # FV = [162, 5, 182]
+            fNameSplit = sortDataOutFn + '_%dsplit.root' % FV[0]
+            NSplit = 3
             if not show:
+                # ==== GET TRUE STANDOFF ====
+                # Store standoff histograms of investigated
+                # data to root file. 
+                # ATTENTION: Keep the fiducial cut in mind!
+                dataChain = getChain('dataTree', dataList)
+                scatterEnergy(dataChain, FV, 'ss')
+                return
+
+                mcChain = getChain('mcTree', mcList)
+
+                # Split the detector volume in N parts and 
+                # evaluate each split volume
+                if split:
+                    if ss:
+                        NEvents = getApothemThetaHisto('standoffRoot/' + fNameSplit, dataChain, FV, 'ss', MC=False, NEvents=0, name='DataSS', N=NSplit)
+                        if random:
+                            generate2nbb('standoffRoot/' + fNameSplit, NEvents, FV, name='McSS', N=NSplit)
+                        else:
+                            getApothemThetaHisto('standoffRoot/' + fNameSplit, mcChain, FV, 'ss', MC=True, NEvents=NEvents, name='McSS', N=NSplit)
+
+                    if ms:
+                        NEvents = getApothemThetaHisto('standoffRoot/' + fNameSplit, dataChain, FV, 'ms', MC=False, NEvents=0, name='DataMS', N=NSplit)
+                        getApothemThetaHisto('standoffRoot/' + fNameSplit, mcChain, FV, 'ms', MC=True, NEvents=NEvents, name='McMS', N=NSplit)
+                    return
+
+                # Compare characteristics of MC and data root-files
+                # getCompHisto(fName, dataChain, mcChain, FV, type='ss', selectList=['standoff_distance', 'multiplicity', 'energy', 'num_coll_wires', 'num_ind_wires', 'u_mst_metric', 'v_mst_metric'], name='')
+                # getCompHisto(fName, dataChain, mcChain, FV, type='ms', selectList=['standoff_distance', 'multiplicity', 'energy', 'num_coll_wires', 'num_ind_wires', 'u_mst_metric', 'v_mst_metric'], name='')
+                # return
+
+                # Get standoff histograms
                 for resBins in resBinsList:
                     fName = sortDataOutFn + '_%d.root' % resBins
                     print fName 
 
-                    # fName = 'standoffS5fid.root'
-                    # fName = 'standoffHex_artDrift_neg.root'
-                    # fName = 'standoffArtDriftNM.root'
-
-                    # ==== GET TRUE STANDOFF ====
-                    # Store standoff histograms of investigated
-                    # data to root file. 
-                    # ATTENTION: Keep the fiducial cut in mind!
-                    dataChain = getChain('dataTree', dataList)
-                    mcChain = getChain('mcTree', mcList)
-
-                    # scatterEnergy(dataChain, FV, 'ss')
-                    # return
-
-                    # Compare characteristics of MC and data root-files
-                    # getCompHisto(fName, dataChain, mcChain, FV, type='ss', selectList=['standoff_distance', 'multiplicity', 'energy', 'num_coll_wires', 'num_ind_wires', 'u_mst_metric', 'v_mst_metric'], name='')
-                    # getCompHisto(fName, dataChain, mcChain, FV, type='ms', selectList=['standoff_distance', 'multiplicity', 'energy', 'num_coll_wires', 'num_ind_wires', 'u_mst_metric', 'v_mst_metric'], name='')
-
-                    # getCompHisto(fName, dataChain, mcChain, FV, type='ss', selectList=['standoff_distance', 'multiplicity', 'energy', 'u_mst_metric', 'v_mst_metric'], name='')
-                    # getCompHisto(fName, dataChain, mcChain, FV, type='ms', selectList=['standoff_distance', 'multiplicity', 'energy', 'u_mst_metric', 'v_mst_metric'], name='')
-
-                    # getCompHisto(fName, dataChain, mcChain, FV, type='ss', selectList=['energy'], name='')
-                    # return
-
                     if ss:
                             getStandoffHistoMan('standoffRoot/' + fName, dataChain, FV, 'ss', False, 'DataSS', None, resBins)
-                            # NEvents = getApothemThetaHisto('standoffRoot/' + fName, dataChain, FV, 'ss', False, 0, 'DataSS', 3)
-                            # getApothemHisto('standoffRoot/' + fName, dataChain, FV, 'ss', False, 'DataSS')
-                            # print 'NEvents:', NEvents
+                            getStandoffHistoMan('standoffRoot/' + fName, mcChain, FV, 'ss', True, 'McSS', None, resBins)
 
-                            if random:
-                                # Rate agreement
-                                # NEvents = int( 1.e6 )
-                                generate2nbb('standoffRoot/' + fName, NEvents, FV, name='McSS', N=3)
-                            else:
-                                getStandoffHistoMan('standoffRoot/' + fName, mcChain, FV, 'ss', True, 'McSS', None, resBins)
-                                # getApothemThetaHisto('standoffRoot/' + fName, mcChain, FV, 'ss', True, NEvents, 'McSS', 3)
-                                # getApothemHisto('standoffRoot/' + fName, mcChain, FV, 'ss', True, 'McSS')
                     if ms:
                             getStandoffHistoMan('standoffRoot/' + fName, dataChain, FV, 'ms', False, 'DataMS', None, resBins)
-                            # getApothemThetaHisto('standoffRoot/' + fName, dataChain, FV, 'ms', False, 'DataMS')
-
                             getStandoffHistoMan('standoffRoot/' + fName, mcChain, FV, 'ms', True, 'McMS', None, resBins)
-                            # getApothemThetaHisto('standoffRoot/' + fName, mcChain, FV, 'ms', True, 'McMS')
-
-                    # plotLbkg('standoffRoot/' + fName, fit=True, art='ss', output='hexSplit6_lbkgCut.pdf', N=3)
 
             else:
                 # ==== READ & COMPARE STANDOFF ====
                 if not os.path.isdir('standoffPlots/%s' % sortDataOutFn):
                     os.makedirs('standoffPlots/%s' % sortDataOutFn)
+                
+                if split:
+                    if ss:
+                        plotLbkg('standoffRoot/' + fNameSplit, fit=True, art='ss', output='standoffPlots/%s/' % sortDataOutFn + fNameSplit.split('.')[0] + 'SS.pdf', N=0)
+                    if ms:
+                        plotLbkg('standoffRoot/' + fNameSplit, fit=True, art='ms', output='standoffPlots/%s/' % sortDataOutFn + fNameSplit.split('.')[0] + 'MS.pdf', N=0)
+                    return 
 
                 if ss:
                     for resBins in resBinsList:
@@ -322,6 +328,7 @@ def main():
                 # Randomly generate particles and save the resulting field lines
 		# randomTest(H_BINS_RAND)
 		randomTest(None, True)
+                return
 		
 		# pf.projectFit(H_BINS, SSoutDir, SSoutFile)
 
@@ -390,6 +397,7 @@ def get_args():
 	ap.add_argument('-so', '--standoff', help='Generate standoff distance plots', action='store_true')
 	ap.add_argument('-t', '--test', help='Access to test-area', action='store_true')
         ap.add_argument('-e', '--energy', help='Energy plots', action='store_true')
+        ap.add_argument('-sp', '--split', help='N-split plots', action='store_true')
 
 	args = ap.parse_args()
 
@@ -398,7 +406,7 @@ def get_args():
 	if not args.multisite and not args.singlesite:
 		ap.error('Either --multisite or --singlesite or both have to be selected.')
 
-	return args.settings, args.histogram, args.multisite, args.singlesite, args.plot, args.show, args.cart, args.nodifference, args.drawcyl, args.random, args.standoff, args.test, args.energy
+	return args.settings, args.histogram, args.multisite, args.singlesite, args.plot, args.show, args.cart, args.nodifference, args.drawcyl, args.random, args.standoff, args.test, args.energy, args.split
 
 if __name__ == '__main__':
 	main()

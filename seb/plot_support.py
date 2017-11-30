@@ -552,6 +552,91 @@ def getStandoffHisto(fName, tree, FV, type='ss', MC=True, name='default', out=No
         hStandoff.Write('', ROOT.TObject.kOverwrite)
 	f.Close()
         
+def getStandoffDistMan(tree, FV, type='ss', MC=True, bins=20):
+        RIR = 183.2356
+        FV = [171, 0, 182]
+
+	ROOT.EXOFiducialVolume.SetUserHexCut(*FV)
+	ROOT.gROOT.cd()
+    
+	cut = getCut(calibCut=True, energyCut=True, type=type, MC=MC, eMin=980, eMax=9800)
+        print cut
+	treeCut = tree.CopyTree(cut, 'fast') 	
+
+        N = treeCut.GetEntries()
+        
+	posList = []
+	for i in range( N ):
+		treeCut.GetEntry(i)
+		es = treeCut.EventSummary
+                mul = es.multiplicity
+
+		x, y, z = getClusterPos( es, True )
+                if np.isnan(x) or np.isnan(y) or np.isnan(z):
+                    continue
+
+                x_, y_, z_ = x, y, z
+                posList.append( list( np.array([x_, y_, z_]) )) # / 1000. ) )
+
+        posList = np.array( posList )
+
+        plotHex(posList[:,0], posList[:,1], FV[0], RIR, bins, r'$x$ [mm]', r'$y$ [mm]')
+        plotHex(posList[:,0], posList[:,2], FV[0], FV[2], bins, r'$x$ [mm]', r'$z$ [mm]')
+        plotHex(posList[:,1], posList[:,2], RIR, FV[2], bins, r'$y$ [mm]', r'$z$ [mm]')
+        raw_input('')
+
+def plotHex(x, y, rangeX, rangeY, bins, xlabel, ylabel):
+        import matplotlib.pyplot as plt
+        from matplotlib.colors import ListedColormap
+        from matplotlib import cm
+        from copy import copy
+        from scipy.stats import kendalltau
+        import seaborn as sns
+        # sns.set(style = 'ticks')
+        # sns.set_palette()
+
+        # cmapV = copy(cm.get_cmap('viridis'))
+        # cmapV.set_under('w', alpha=0)
+        # cmapV.set_bad('w', alpha=0)
+
+        colorsData = sns.color_palette('viridis', 20) # sns.cubehelix_palette(20, start=.5, rot=-.75, dark=0.2, light=.7)
+        colors = [(1., 1., 1.)] + colorsData # ['#FFFFFFFF'] + colorsData
+        print colorsData
+        cmap = ListedColormap(sns.color_palette(colors)) #.as_hex())
+        print cmap
+
+        colorsLine = [[c*1.2 if c*1.2 <= 1 else 1. for c in color] for color in colorsData]
+        cmapLines = ListedColormap(sns.color_palette(colorsLine)) # sns.cubehelix_palette(20, start=.5, rot=-.75, dark=0.15, light=.65, as_cmap=True)
+
+        #figXY, axXY = plt.subplots()
+        # hb = axXY.hexbin(x, y, gridsize=bins, vmin=0.1, cmap=cmap)
+        lm = sns.jointplot(x, y, kind='hex', stat_func=None, space=0, cmap=cmap) # , color='b')
+        lm.plot_joint(sns.kdeplot, n_levels=6, cmap=cmapLines)
+        lm.set_axis_labels(xlabel, ylabel)
+        plt.xlim(-rangeX, rangeX)
+        plt.ylim(-rangeY, rangeY)
+        plt.subplots_adjust(left=0.15, bottom=0.1)
+
+        # plt.subplots_adjust(left=0.2, right=0.8, top=0.8, bottom=0.2)
+        # cbarAx = lm.fig.add_axes([.85, .25, .05, .4])
+        # cb = plt.colorbar(cax=cbarAx)
+        # cb.set_label('Counts')
+
+        # lm.fig.xlabel(xlabel)
+        # lm.fig.ylabel(ylabel)
+
+        # axes = lm.axes
+        # print axes
+        # cb = figXY.colorbar(hb, ax=axXY)
+
+        #axXY.set_xlim(-rangeX, rangeX)
+        #axXY.set_ylim(-rangeY, rangeY)
+        #axXY.set_xlabel(xlabel)
+        #axXY.set_ylabel(ylabel)
+
+        # figXY.show()
+        plt.show()
+
 def getStandoffHistoMan(fName, tree, FV, type='ss', MC=True, name='default', out=None, bins=20):
 	import generate_random as gr
 	ROOT.EXOFiducialVolume.SetUserHexCut(*FV)
@@ -589,6 +674,16 @@ def getStandoffHistoMan(fName, tree, FV, type='ss', MC=True, name='default', out
 		x, y, z = getClusterPos( es, True )
                 if np.isnan(x) or np.isnan(y) or np.isnan(z):
                     continue
+
+                '''
+                # Cut on angular segment in volume
+                Apothem = 171
+                theta = np.arctan2(x, y)
+                thetaCutVal = 30.*np.pi/180 - np.arccos(float(Apothem)/REFLECTORINNERRAD)
+                thetaOffset = 0 # -5.*np.pi/180
+                if not (theta <= (thetaCutVal+thetaOffset) and theta >= (-thetaCutVal+thetaOffset)):
+                    continue
+                '''
 
                 # if z > 0 or abs(z) > 160 or abs(z) < 40 or np.sqrt( x**2 + y**2 ) > 183.:
                 #    continue
@@ -736,11 +831,11 @@ def getApothemThetaHisto(fName, tree, FV, type='ss', MC=True, NEvents=0, name='d
 	ROOT.EXOFiducialVolume.SetUserHexCut(*FV)
 	ROOT.gROOT.cd()
     
-	cut = getCut(calibCut=True, energyCut=True, type=type, MC=MC, eMin=750, eMax=3500)
+	cut = getCut(calibCut=True, energyCut=True, type=type, MC=MC, eMin=980, eMax=9800)
         if MC:
             type = 'mc'
         # cut += ' && ( (energy_%s > 800 && energy_%s < 1200) )' % (type, type)
-        cut += ' && ( (energy_%s > 800 && energy_%s < 1400) || (energy_%s > 1530 && energy_%s < 1620 ) )' % (type, type, type, type)
+        # cut += ' && ( (energy_%s > 800 && energy_%s < 1400) || (energy_%s > 1530 && energy_%s < 1620 ) )' % (type, type, type, type)
         # cut += ' && (energy_%s > 800 && energy_%s < 2000) ' % (type, type)
         print cut
 
@@ -766,15 +861,22 @@ def getApothemThetaHisto(fName, tree, FV, type='ss', MC=True, NEvents=0, name='d
         binZ = int( 400 / binWidthZ )
         zRange = 0.5 * binZ * binWidthZ
 
-        binR = 20
-        binWidthR = maxCoord/binR
+        binWidthA = 9. / 3
+        binA = int( Apothem / binWidthA )
+
+        binWidthSO = 9. / 3
+        binSO = int( 200 / binWidthSO )
+
+        binWidthR = 1. # 9. / 3
+        binR = int( maxCoord / binWidthR ) # 20
         # binWidthZ = 400./binZ
 
         for i in range(N+1):
-            histZlist.append( ROOT.TH1D('z'+name+str(i), 'z'+name+str(i), 30, -200, 200) )
-            histAlist.append( ROOT.TH1D('a'+name+str(i), 'a'+name+str(i), Apothem // 9, 0, Apothem) )
-            histSOlist.append( ROOT.TH1D('so'+name+str(i), 'so'+name+str(i), int(200 // 9.4), 0, (200 // 9.4)*9.4) )
-            histRlist.append( ROOT.TH1D('r'+name+str(i), 'so'+name+str(i), 20, 0, maxCoord) )
+            histZlist.append( ROOT.TH1D('z'+name+str(i), 'z'+name+str(i), binZ, -200, 200) )
+            histAlist.append( ROOT.TH1D('a'+name+str(i), 'a'+name+str(i), binA, 0, Apothem) )
+            # histSOlist.append( ROOT.TH1D('so'+name+str(i), 'so'+name+str(i), int(200 // 9.4), 0, (200 // 9.4)*9.4) )
+            histSOlist.append( ROOT.TH1D('so'+name+str(i), 'so'+name+str(i), binSO, 0, binWidthSO * binSO) )
+            histRlist.append( ROOT.TH1D('r'+name+str(i), 'so'+name+str(i), binR, 0, binWidthR * binR) )
             histRZlist.append( ROOT.TH2D('rz'+name+str(i), 'rz'+name+str(i), binR, 0, maxCoord, binZ, -zRange, zRange) )
 
         l = [(2*n+1)*30*np.pi/180 for n in range(-3,3)] 
@@ -793,23 +895,26 @@ def getApothemThetaHisto(fName, tree, FV, type='ss', MC=True, NEvents=0, name='d
         for j in range( NEvents ):
 		treeCut.GetEntry(j)
 		es = treeCut.EventSummary
-		x, y, z = getClusterPos( es, False )
-                theta = np.arctan2(y[0], x[0])
+		x, y, z = getClusterPos( es, True )
+                if np.isnan(x) or np.isnan(y) or np.isnan(z):
+                    continue
+
+                theta = np.arctan2(y, x)
                 A = getApothem(x, y, z)
                 r = np.sqrt(x**2 + y**2)
 
                 idx = ( (np.digitize(theta, l) + N) % N )
                 so = es.standoff_distance
 
-                histZlist[idx].Fill(z[0], 1.)
-                histAlist[idx].Fill(A[0], 1.)
+                histZlist[idx].Fill(z, 1.)
+                histAlist[idx].Fill(A, 1.)
                 histSOlist[idx].Fill(so, 1.)
                 histRlist[idx].Fill(r, 1.)
-                histRZlist[idx].Fill(r, z, float( N )/histRZnorm(r, binWidthR, binWidthZ))
+                histRZlist[idx].Fill(r, z, float( N )/histRZnorm(r, binWidthR, binWidthZ, Apothem))
                 
                 # Last entries in lists contain all points
-                histZlist[-1].Fill(z[0], 1.)
-                histAlist[-1].Fill(A[0], 1.)
+                histZlist[-1].Fill(z, 1.)
+                histAlist[-1].Fill(A, 1.)
                 histSOlist[-1].Fill(so, 1.)
                 histRlist[-1].Fill(r, 1.)
                 histRZlist[-1].Fill(r, z, float( 1. )/histRZnorm(r, binWidthR, binWidthZ))
@@ -829,27 +934,55 @@ def getApothemThetaHisto(fName, tree, FV, type='ss', MC=True, NEvents=0, name='d
         return NEvents
 
 def scatterEnergy(tree, FV, art='ss'):
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import ListedColormap
+    from matplotlib import cm
+    from copy import copy
+    import seaborn as sns
     ROOT.EXOFiducialVolume.SetUserHexCut(*FV)
     ROOT.gROOT.cd()
 
     # cut = getCut(calibCut=True, energyCut=False, type=art)
     treeCut = tree # tree.CopyTree( cut )
 
-    h = ROOT.TH2D('h', 'h', 2000, 500, 2800, 2000, 0, 2800)
+    # h = ROOT.TH2D('h', 'h', 2000, 500, 2800, 2000, 0, 2800)
 
     en = []
     for i in range(treeCut.GetEntries()):
         treeCut.GetEntry(i)
         es = treeCut.EventSummary
-        scint = es.e_scint
-        charge = es.e_charge
+        scint = es.e_scint * 0.984487
+        charge = es.e_charge * 1.034517
+        if (scint < 500 or scint > 3500) or (charge < 500 or charge > 3500):
+            continue
 
-        h.Fill(scint, charge, 1)
+        # h.Fill(scint, charge, 1)
         en.append( (scint, charge) )
 
-    c = ROOT.TCanvas()
-    h.Draw('colz')
-    raw_input('')
+    # c = ROOT.TCanvas()
+    # h.Draw('colz')
+    # raw_input('')
+
+    colorsData = sns.color_palette('viridis', 256)
+    colors = [(1., 1., 1.)] + colorsData
+    cmap = ListedColormap(sns.color_palette(colors))
+
+    colorsLine = [[c*1.8 if c*1.8 <= 1 else 1. for c in color] for color in colorsData]
+    cmapLines = ListedColormap(sns.color_palette(colorsLine))
+
+    scint, charge = np.array(en)[:,0], np.array(en)[:,1]
+    print scint
+
+    charge = np.array( [c for c in charge if c >= 500 and c <= 3500] )
+    scint = np.array( [s for s in scint if s >= 500 and s <= 3500] )
+
+    lm = sns.jointplot(charge, scint, kind='hex', stat_func=None, space=0, cmap=cmap, joint_kws={'gridsize': (200, 200)}, marginal_kws=dict(bins=500), xlim=(700, 3500), ylim=(700, 3500))
+    # lm.plot_joint(sns.kdeplot, gridsize=200, n_levels=6, cmap=cmapLines, bw=.1)
+    lm.set_axis_labels(r'$E_\mathrm{charge}$ [keV]', '$E_\mathrm{scint}$ [keV]')
+    # plt.xlim(500, 3500)
+    # plt.ylim(500, 3500)
+    plt.subplots_adjust(left=0.15, bottom=0.1)
+    plt.show()
 
     '''
     import matplotlib.pyplot as plt

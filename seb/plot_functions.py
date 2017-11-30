@@ -109,7 +109,7 @@ def plotCompQQ(hist1, hist2, hBins, title1, title2, show=True, out=''):
 
 	c.cd(3)
 	resgr.GetXaxis().SetRangeUser(H_MIN, H_MAX)
-	resgr.SetTitle('Normalized Residuals')
+	resgr.SetTitle('Normalised Residuals')
 	resgr.Draw('APL')
 	line = ROOT.TLine(0, 0, H_MAX, 0)
 	line.SetLineStyle(ROOT.kDashed)
@@ -118,7 +118,7 @@ def plotCompQQ(hist1, hist2, hBins, title1, title2, show=True, out=''):
 
 	c.cd(4)
 	qqplot.SetMarkerStyle(3)
-	qqplot.SetTitle('Q-Q Plot of Normalized Residuals')
+	qqplot.SetTitle('Q-Q Plot of Normalised Residuals')
 	qqplot.Draw('AP')
 
 	c.cd(0)
@@ -420,7 +420,7 @@ def plotStandoffHisto(fName, type='ss', show=True, out=''):
         hData.Scale(1./hData.Integral())
         hMc.Scale(1./hMc.Integral())
 
-        plotCompTwo(hMc, hData, 'Standoff Distance [mm]', 'Normalized Events / (2 mm)', 'MC', 'Data', show, out)
+        plotCompTwo(hMc, hData, 'Standoff Distance [mm]', 'Normalised Events / (2 mm)', 'MC', 'Data', show, out)
 
         f.Close()
 
@@ -475,7 +475,7 @@ def plotStandoffHistoFancy(fName, type='ss', show=False, out=''):
 
         # Create figure
         f, (axMain, axRes) = plt.subplots(2, sharex=True, sharey=False, gridspec_kw = {'height_ratios':[2.5, 1]})
-        f.subplots_adjust(wspace=0, hspace=0)
+        f.subplots_adjust(wspace=0, hspace=0, left=.16)
 
         # Axis Main
         axMain.step(x, mc, where='post', color='k', label='MC', zorder=0)
@@ -499,9 +499,9 @@ def plotStandoffHistoFancy(fName, type='ss', show=False, out=''):
 
         # Check if width is integer
         if int(binW) == binW:
-            axMain.set_ylabel(r'Normalized Events / (%d mm)' % binW)
+            axMain.set_ylabel(r'Normalised Events / (%d mm)' % binW)
         else:
-            axMain.set_ylabel(r'Normalized Events / (%.2f mm)' % binW)
+            axMain.set_ylabel(r'Normalised Events / (%.2f mm)' % binW)
 
         axMain.axhline(y=0, lw=.5, ls='--', color='k')
 
@@ -524,7 +524,7 @@ def plotStandoffHistoFancy(fName, type='ss', show=False, out=''):
         axRes.axhline(y=result[1], linewidth=.5, ls='--', color='k')
 
         axRes.set_xlabel(r'Standoff distance [mm]')
-        axRes.set_ylabel(r"$\frac{n_{\mathrm{Data}} - n_{\mathrm{MC}}}{n_{\mathrm{Data}}}$")
+        axRes.set_ylabel(r"$\frac{n_{\mathrm{Data}} - n_{\mathrm{MC}}}{n_{\mathrm{Data}}}$", fontsize=14)
         if show:
             f.show()
             raw_input('')
@@ -621,7 +621,7 @@ def plotLbkg(fName, fit=False, art='ss', output='default.pdf', N=3):
 
     typeList = ['z', 'a', 'so', 'r']
     xLabelList = ['z [mm]', 'Apothem [mm]', 'Standoff distance [mm]', 'Radius [mm]']
-    yLabel = 'Normalized Events'
+    yLabel = 'Normalised Events'
     xRangeList = [(-200, 200), (0, 180), (0, 180), (0, 200)]
     yRangeList = [(0.02, 0.045), (0.0, 0.14), (0.0, 0.172), (0.0, 0.13)]
     # normList = [(-200, 200), (130, 180), (0, 50), (140, 200)]
@@ -632,6 +632,8 @@ def plotLbkg(fName, fit=False, art='ss', output='default.pdf', N=3):
         colorList = [('#ca5576', '#ca5576'), ('#648ace', '#648ace'), ('#50ab6d', '#50ab6d'), ('black', 'blue')]
     elif N == 6:
         colorList = [('#ca5576', '#ca5576'), ('#648ace', '#648ace'), ('#50ab6d', '#50ab6d'), ('#ab62c0', '#ab62c0'), ('#979e3d', '#979e3d'), ('#c86f3e', '#c86f3e'), ('black', 'blue')]
+    elif not N or N==0:
+        colorList = [('#4bae8d', '#7878cd')]
     else:
         return
 
@@ -645,7 +647,28 @@ def plotLbkg(fName, fit=False, art='ss', output='default.pdf', N=3):
         dataMean = hDict['%sData%s%d' % (typ, art.upper(), N)]
         normRange = normList[j]
         x, dataMeanCont, dataMeanContErr = histToListNorm(dataMean, normRange)
-        for i in range(N + 1):
+
+        if not N or N==0:
+            # Process only the last data
+            # Divide by number of plot types, Event types and Data/MC
+            # subtract 1 since index starts at 0
+            loop = [ len(hDict.keys()) // (5 * 2 * 2) - 1 ]
+        else:
+            loop = range(N + 1)
+
+        for i in loop:
+            if N == 0:
+                colorTuple = colorList[0]
+                labelMC, labelData = 'MC', 'Data'
+            else:
+                colorTuple = colorList[i]
+                if i == N:
+                    labelMC = 'MC All' 
+                    labelData = 'Data All'
+                else:
+                    labelMC = 'MC#%d' % i
+                    labelData = 'Data#%d' % i
+
             data = hDict['%sData%s%d' % (typ, art.upper(), i)]
             mc = hDict['%sMc%s%d' % (typ, art.upper(), i)]
 
@@ -659,10 +682,11 @@ def plotLbkg(fName, fit=False, art='ss', output='default.pdf', N=3):
             resErr = abs(mcCont/dataCont) * np.sqrt( (mcErrCont/mcCont)**2 + (dataErrCont/dataCont)**2 )
 
             # = Plot =
-            ax1.step(list(x)+[(x[-1]+binWidth)], list(mcCont)+[0.], where='post', c=colorList[i][0])
-            ax1.errorbar(x+binWidth/2., mcCont, yerr=mcErrCont, fmt='.', c=colorList[i][0], label='MC#%d' % i)
-            ax1.errorbar(x+binWidth/2., dataCont, xerr=binWidth/2., yerr=dataErrCont, c=colorList[i][1], fmt='x', label='Data#%d' % i)
-            ax2.errorbar(x+binWidth/2., res, xerr=binWidth/2., yerr=resErr, fmt='x', color=colorList[i][1])
+            print x[-1], colorList
+            ax1.step(list(x)+[(x[-1]+binWidth)], list(mcCont)+[0.], where='post', c=colorTuple[0])
+            ax1.errorbar(x+binWidth/2., mcCont, yerr=mcErrCont, fmt='.', c=colorTuple[0], label=labelMC)
+            ax1.errorbar(x+binWidth/2., dataCont, xerr=binWidth/2., yerr=dataErrCont, c=colorTuple[1], fmt='x', label=labelData)
+            ax2.errorbar(x+binWidth/2., res, xerr=binWidth/2., yerr=resErr, fmt='.', color=('k' if N==0 else colorTuple[1]))
 
             ax2.grid()
             ax2.axhline(y=0, linewidth=0.5, color='k')
@@ -676,7 +700,7 @@ def plotLbkg(fName, fit=False, art='ss', output='default.pdf', N=3):
                 print 'popt: ', popt
                 print 'perr: ', perr
                 print
-                ax1.plot(np.array([0,162]), linear(np.array([0, 162]), *popt),c=colorList[i][1])
+                ax1.plot(np.array([0,162]), linear(np.array([0, 162]), *popt),c=colorTuple[1])
 
             if fit and typ == 'so':
                 shapeComparison(dataMean, data)
@@ -686,7 +710,7 @@ def plotLbkg(fName, fit=False, art='ss', output='default.pdf', N=3):
                 print
 
         ax2.set_xlabel( xLabelList[j] )
-        # ax2.set_ylabel(r"$\frac{n_\text{Data} - n_\text{MC}}{n_\text{Data}}$")
+        ax2.set_ylabel(r"$\frac{n_\mathrm{Data} - n_\mathrm{MC}}{n_\mathrm{Data}}$", fontsize=14)
         if isinstance(binWidth, (int, long)):
             ax1.set_ylabel( yLabel + ' / (%d mm)' % binWidth )
         else:
@@ -700,16 +724,22 @@ def plotLbkg(fName, fit=False, art='ss', output='default.pdf', N=3):
         # ax1.set_yscale('log')
         ax1.legend(loc='best')
 
-        ax2.set_ylim(bottom=-0.5, top=0.5)
-        ax2.yaxis.set_major_locator(ticker.MultipleLocator(0.25))
+        ax2.set_ylim(bottom=-0.2, top=0.2)
+        ax2.yaxis.set_major_locator(ticker.MultipleLocator(0.05))
 
-        fig1.show()
-        raw_input('')
-        plt.close()
+        # fig1.show()
+        # raw_input('')
+        # plt.close()
 
         fig1.savefig(pp, format='pdf')            
         plt.cla()
 
+    # raw_input('')
+
+    if not N:
+        pp.close()
+        return
+    
     # = 2D histograms =
     # r vs. z
     # fig = plt.figure()
@@ -730,7 +760,7 @@ def plotLbkg(fName, fit=False, art='ss', output='default.pdf', N=3):
             # h.Divide(hData)
 
             r, z, bins = hist2dToList( hData )
-            print 'Bin normalization %s #%d' % (typ, i)
+            print 'Bin normalisation %s #%d' % (typ, i)
             # maxDataHist = hDict['%s%s%s%d' % ('rz', typ, art.upper(), N)]
             # rMax, zMax, binsMax = hist2dToList( maxDataHist )
             # maxData = maxDataHist.GetBinContent(maxDataHist.GetMaximumBin())
@@ -918,9 +948,9 @@ def plotStandoffZ(dataRoot, mcRoot, nBins, bin=0, region='all', show=False, out=
 
     # Check if width is integer
     if int(binW) == binW:
-        axMain.set_ylabel(r'Normalized events / (%d mm)' % binW)
+        axMain.set_ylabel(r'Normalised events / (%d mm)' % binW)
     else:
-        axMain.set_ylabel(r'Normalized events / (%.2f mm)' % binW)
+        axMain.set_ylabel(r'Normalised events / (%.2f mm)' % binW)
 
     axRes.grid()
     axRes.set_ylim(-.4, .4)
@@ -930,7 +960,7 @@ def plotStandoffZ(dataRoot, mcRoot, nBins, bin=0, region='all', show=False, out=
     axRes.axhline(y=result[1], linewidth=.5, ls='--')
 
     axRes.set_xlabel(r"z [mm]")
-    axRes.set_ylabel(r"$\frac{n_{\mathrm{Data}} - n_{\mathrm{MC}}}{n_{\mathrm{Data}}}$")
+    axRes.set_ylabel(r"$\frac{n_{\mathrm{Data}} - n_{\mathrm{MC}}}{n_{\mathrm{Data}}}$", fontsize=14)
 
     if show:
         f.show()
@@ -979,4 +1009,176 @@ def autoscale_y(ax,margin=0.1):
         if new_top > top: top = new_top
 
     ax.set_ylim(bot,top)
+
+from matplotlib import pyplot as plt
+from matplotlib import patches
+from matplotlib import text as mtext
+import numpy as np
+import math
+
+class CurvedText(mtext.Text):
+    """
+    A text object that follows an arbitrary curve.
+    """
+    def __init__(self, x, y, text, axes, **kwargs):
+        super(CurvedText, self).__init__(x[0],y[0],' ', axes, **kwargs)
+        axes.add_artist(self)
+
+        ##saving the curve:
+        self.__x = x
+        self.__y = y
+        self.__zorder = self.get_zorder()
+
+        ##creating the text objects
+        self.__Characters = []
+        for c in text:
+            if c == ' ':
+                ##make this an invisible 'a':
+                t = mtext.Text(0,0,'a')
+                t.set_alpha(0.0)
+            else:
+                t = mtext.Text(0,0,c, **kwargs)
+
+            #resetting unnecessary arguments
+            t.set_ha('center')
+            t.set_rotation(0)
+            t.set_zorder(self.__zorder +1)
+
+            self.__Characters.append((c,t))
+            axes.add_artist(t)
+
+
+    ##overloading some member functions, to assure correct functionality
+    ##on update
+    def set_zorder(self, zorder):
+        super(CurvedText, self).set_zorder(zorder)
+        self.__zorder = self.get_zorder()
+        for c,t in self.__Characters:
+            t.set_zorder(self.__zorder+1)
+
+    def draw(self, renderer, *args, **kwargs):
+        """
+        Overload of the Text.draw() function. Do not do
+        do any drawing, but update the positions and rotation
+        angles of self.__Characters.
+        """
+        self.update_positions(renderer)
+
+    def update_positions(self,renderer):
+        """
+        Update positions and rotations of the individual text elements.
+        """
+
+        #preparations
+
+        ##determining the aspect ratio:
+        ##from https://stackoverflow.com/a/42014041/2454357
+
+        ##data limits
+        xlim = self.axes.get_xlim()
+        ylim = self.axes.get_ylim()
+        ## Axis size on figure
+        figW, figH = self.axes.get_figure().get_size_inches()
+        ## Ratio of display units
+        _, _, w, h = self.axes.get_position().bounds
+        ##final aspect ratio
+        aspect = ((figW * w)/(figH * h))*(ylim[1]-ylim[0])/(xlim[1]-xlim[0])
+
+        #points of the curve in figure coordinates:
+        x_fig,y_fig = (
+            np.array(l) for l in zip(*self.axes.transData.transform([
+            (i,j) for i,j in zip(self.__x,self.__y)
+            ]))
+        )
+
+        #point distances in figure coordinates
+        x_fig_dist = (x_fig[1:]-x_fig[:-1])
+        y_fig_dist = (y_fig[1:]-y_fig[:-1])
+        r_fig_dist = np.sqrt(x_fig_dist**2+y_fig_dist**2)
+
+        #arc length in figure coordinates
+        l_fig = np.insert(np.cumsum(r_fig_dist),0,0)
+
+        #angles in figure coordinates
+        rads = np.arctan2((y_fig[1:] - y_fig[:-1]),(x_fig[1:] - x_fig[:-1]))
+        degs = np.rad2deg(rads)
+
+
+        rel_pos = 10
+        for c,t in self.__Characters:
+            #finding the width of c:
+            t.set_rotation(0)
+            t.set_va('center')
+            bbox1  = t.get_window_extent(renderer=renderer)
+            w = bbox1.width
+            h = bbox1.height
+
+            #ignore all letters that don't fit:
+            if rel_pos+w/2 > l_fig[-1]:
+                t.set_alpha(0.0)
+                rel_pos += w
+                continue
+
+            elif c != ' ':
+                t.set_alpha(1.0)
+
+            #finding the two data points between which the horizontal
+            #center point of the character will be situated
+            #left and right indices:
+            rel_pos = np.nan_to_num(rel_pos)
+            w = np.nan_to_num(w)
+            l_fig = np.nan_to_num(l_fig)
+            print rel_pos, w, l_fig
+            print np.where(rel_pos + w/2 <= l_fig)[0]
+            il = np.where(rel_pos+w/2 >= l_fig)[0][-1]
+            try:
+                ir = np.where(rel_pos+w/2 <= l_fig)[0][0]
+            except:
+                ir = 0
+
+            #if we exactly hit a data point:
+            if ir == il:
+                ir += 1
+
+            #how much of the letter width was needed to find il:
+            used = l_fig[il]-rel_pos
+            rel_pos = l_fig[il]
+
+            #relative distance between il and ir where the center
+            #of the character will be
+            fraction = (w/2-used)/r_fig_dist[il]
+
+            ##setting the character position in data coordinates:
+            ##interpolate between the two points:
+            x = self.__x[il]+fraction*(self.__x[ir]-self.__x[il])
+            y = self.__y[il]+fraction*(self.__y[ir]-self.__y[il])
+
+            #getting the offset when setting correct vertical alignment
+            #in data coordinates
+            t.set_va(self.get_va())
+            bbox2  = t.get_window_extent(renderer=renderer)
+
+            bbox1d = self.axes.transData.inverted().transform(bbox1)
+            bbox2d = self.axes.transData.inverted().transform(bbox2)
+            dr = np.array(bbox2d[0]-bbox1d[0])
+
+            #the rotation/stretch matrix
+            rad = rads[il]
+            rot_mat = np.array([
+                [math.cos(rad), math.sin(rad)*aspect],
+                [-math.sin(rad)/aspect, math.cos(rad)]
+            ])
+
+            ##computing the offset vector of the rotated character
+            drp = np.dot(dr,rot_mat)
+
+            #setting final position and rotation:
+            t.set_position(np.array([x,y])+drp)
+            t.set_rotation(degs[il])
+
+            t.set_va('center')
+            t.set_ha('center')
+
+            #updating rel_pos to right edge of character
+            rel_pos += w-used
 

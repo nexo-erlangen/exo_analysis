@@ -1,7 +1,20 @@
 #!/usr/bin/env python
 
 import matplotlib.pyplot as plt
+
+from matplotlib import cm
+from matplotlib import rc
+from matplotlib.ticker import NullFormatter
+rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
+rc('text', usetex=True)
 from matplotlib.backends.backend_pdf import PdfPages
+import seaborn as sns
+# sns.set()
+sns.set_style('whitegrid', {'axes.grid' : False})
+sns.set(style = 'ticks')
+paper_rc = {'lines.linewidth': 1.5, 'lines.markersize': 5, 'lines.markeredgecolor': 'auto', 'lines.markeredgewidth': 1.5}
+sns.set_context("paper", rc = paper_rc)                                    
+
 from scipy import signal
 from scipy.optimize import curve_fit
 from scipy.stats import ks_2samp
@@ -19,9 +32,9 @@ plotDir = 'result/plot/'
 RING_DIST = 16.8656
 
 def main():
-	fnReal = 'real/realSide_60.p'
-        evalPara(fnReal, fnReal)
-        return
+	fnReal = 'real/real_60.p'
+        # evalPara(fnReal, fnReal)
+        # return
 
 	evalResDict = {}
         for fn in os.listdir( dataDir ):
@@ -42,16 +55,15 @@ def evalPara(fn, fnReal, cut=True):
 
 	# === DIFF ===
 	# Bin 0
+    	# dataRange = (-170, -20)
     	dataRange = (-170, -20)
-	plotRange = (0.1, -0.6)
+	plotRange = (0.1, -0.4)
 
 	# resultRealBin0 = evaluateFile(fnReal, 0, dataRange, plotRange, None, 'diff')
-        try:
-            resultBin0 = evaluateFile(fn, 0, dataRange, plotRange, pp, 'diff')
-            resultBin0.update( compareFile(fnReal, fn, 0, dataRange, plotRange, pp, 'diff') )
-            evalResBin0 = eval(resultBin0, cut, True)
-        except:
-            evalResBin0 = (0., 0., 0.)
+        resultBin0 = evaluateFile(fn, 0, dataRange, plotRange, pp, 'diff')
+        resultBin0.update( compareFile(fnReal, fn, 0, dataRange, plotRange, pp, 'diff', data1Label=r"$f_\mathrm{res}$", data2Label=r"$f_\mathrm{res}^\mathrm{drift}$") )
+        evalResBin0 = eval(resultBin0, cut, True)
+        evalResBin0 = (0., 0., 0.)
 	
 	print
 	print '===================='
@@ -68,7 +80,7 @@ def evalPara(fn, fnReal, cut=True):
         nBin = 1
         try:
             resultBin1 = evaluateFile(fn, nBin, dataRange, plotRange, pp, 'diff')
-            resultBin1.update( compareFile(fnReal, fn, nBin, dataRange, plotRange, pp, 'diff') )
+            resultBin1.update( compareFile(fnReal, fn, nBin, dataRange, plotRange, pp, 'diff', r"$f_\mathrm{res}$", r"$f_\mathrm{res}^\mathrm{drift}$") )
             evalResBin1 = eval(resultBin1, cut, True)
         except:
             evalResBin1 = (0., 0., 0.)
@@ -80,11 +92,11 @@ def evalPara(fn, fnReal, cut=True):
 
 	# === DATA ===
 	# Bin 0
-	plotRange = (0.12, 0.035)
+	plotRange = (0.125, 0.09)
 
         try:
             resultBin0Data = evaluateFile(fn, 0, dataRange, plotRange, pp, 'data')
-            resultBin0Data.update( compareFile(fnReal, fn, 0, dataRange, plotRange, pp, 'data') )
+            resultBin0Data.update( compareFile(fnReal, fn, 0, dataRange, plotRange, pp, 'data', data1Label=r'$n_\mathrm{data}$', data2Label=r'$n_{\mathrm{data}}$') )
             evalResData = eval(resultBin0Data, cut, False)
         except:
             evalResData = (0., 0., 0.)
@@ -94,7 +106,7 @@ def evalPara(fn, fnReal, cut=True):
 	for nBin in range(1, 1):
             try:
                 evaluateFile(fn, nBin, dataRange, plotRange, pp, 'data')
-                compareFile(fnReal, fn, nBin, dataRange, plotRange, pp, 'data')
+                compareFile(fnReal, fn, nBin, dataRange, plotRange, pp, 'data', data1Label=r'$n_\mathrm{data}$', data2Label=r'$n_{\mathrm{data}}$')
             except:
                 pass
 
@@ -113,7 +125,7 @@ def evaluateFile(fn, nBin, dataRange=(-170, -20), plotRange=(0.1, -0.6), pp=None
 
 	return evaluateData(x, data, data_err, key,dataRange, plotRange, pp, show)
 
-def compareFile(fn1, fn2, nBin, dataRange=(-170, -20), plotRange=(0.1, -0.6), pp=None, key='diff', show=False):
+def compareFile(fn1, fn2, nBin, dataRange=(-170, -20), plotRange=(0.1, -0.6), pp=None, key='diff', data1Label='', data2Label='', show=False):
 	d1 = cPickle.load( open(dataDir + fn1, 'rb') )
 	d2 = cPickle.load( open(dataDir + fn2, 'rb') )
 
@@ -121,7 +133,7 @@ def compareFile(fn1, fn2, nBin, dataRange=(-170, -20), plotRange=(0.1, -0.6), pp
 	data1 = np.array( d1[key] )[:,nBin]
 	data2 = np.array( d2[key] )[:,nBin]
 
-	return compareData(x, data1, data2, key, dataRange, plotRange, pp, show)
+	return compareData(x, data1, data2, key, dataRange, plotRange, pp, data1Label, data2Label, show)
 
 def evaluateData(x, data, data_err=np.array([]), key='diff', dataRange=(-170, -20), plotRange=(0.1, -0.6), pp=None, show=False):
 	resultReturnDict = {}
@@ -162,6 +174,16 @@ def evaluateData(x, data, data_err=np.array([]), key='diff', dataRange=(-170, -2
 	xFFT, dataFFT = fftEval(xFit, dataFlat)
 
 	wavelength = xFFT[list(dataFFT).index( max( dataFFT ) )]
+        def gauss(x, A, mu, sigma):
+            return A*np.exp(-(x-mu)**2/(2*sigma**2))
+
+        xForFit, dataForFit = zip(*[item for item in zip(xFFT, dataFFT) if abs(item[0] - wavelength) < 1.3])
+        # plt.plot(xForFit, dataForFit)
+        # plt.show()
+        p0 = [0.01, wavelength, 3]
+        # popt, pcov = curve_fit(gauss, xForFit, dataForFit, p0) 
+        # print popt, np.sqrt(np.diag(pcov))
+
 	resultReturnDict['waveFFT'] = wavelength
 	print 'Wavelength of FFT: %f' % wavelength
 
@@ -192,14 +214,21 @@ def evaluateData(x, data, data_err=np.array([]), key='diff', dataRange=(-170, -2
 	print 'Wavelength of auto correlation: %f\n' % autoWavelength
 
 	# = Plots =
-	fig1 = plt.figure()
+	fig1 = plt.figure(figsize=(7, 2.5))
+        fig1.subplots_adjust(bottom=0.2)
+
 	ax1 = fig1.add_subplot(111)
 
 	ax1.set_xlabel('z [mm]')
-	ax1.set_ylabel('data')
+        if key == 'diff':
+            # ax1.set_ylabel(r"$\frac{n_{\mathrm{data}} - n_{\mathrm{MC}}}{n_{\mathrm{data}}}$", fontsize=14)
+            ax1.set_ylabel(r"$f_\mathrm{res}^\mathrm{drift}$", fontsize=14)
+        elif key == 'data':
+	    # ax1.set_ylabel(r'$n_\mathrm{data}$', fontsize=14)
+	    ax1.set_ylabel(r'$n_\mathrm{MC}^\mathrm{drift}$', fontsize=14)
 
 	plotLeft, plotRight = plotRange
-	ax1.set_xlim(left=-190, right=-10)
+	ax1.set_xlim(left=-175, right=-20)
         ax1.set_ylim(top=plotLeft, bottom=plotRight)
 
 	# diff
@@ -214,23 +243,24 @@ def evaluateData(x, data, data_err=np.array([]), key='diff', dataRange=(-170, -2
 	# FFT
 	# Limits and labels
 	fig2, axFFT = plt.subplots(2, sharex=False)
-	axFFT[0].set_ylabel('FFT')
-	axFFT_ax1 = axFFT[0].twinx() 	# Second y-axis
-        axFFT[0].set_xlabel('Wavelength [mm]')
-	axFFT_ax1.set_ylabel('FFT of autocorrelation')
+        fig2.subplots_adjust(hspace=0.4)
+        axFFT[0].set_ylabel('FFT [a.u.]')
+	# axFFT_ax1 = axFFT[0].twinx() 	# Second y-axis
+        axFFT[0].set_xlabel('Period length [mm]')
+	# axFFT_ax1.set_ylabel('Probability (FFT of AC)')
 
-	axFFT[1].set_xlabel('Shift [mm]')
-	axFFT[1].set_ylabel('Flat')
-	axFFT_ax2 = axFFT[1].twinx()
-	axFFT_ax2.set_ylabel('AC')
+	axFFT[1].set_xlabel(r'$z_s$ [mm]')
+	axFFT[1].set_ylabel('AC [a.u.]')
+	# axFFT_ax2 = axFFT[1].twinx()
+	# axFFT_ax2.set_ylabel('Probability')
 
 	# Plot
 	# Auto correlation
-	ln1_1 = axFFT[0].plot(xFFT, dataFFT, '-x', label='FFT', color='b')
-	ln1_2 = axFFT_ax1.plot(xAC_FFT, dataAC_FFT, '.-', label='FFT of auto correlation', color='g')
+	ln1_1 = axFFT[0].plot(xFFT, np.array(dataFFT) / sum(dataFFT), '-x', label='FFT') #, color='b')
+	ln1_2 = axFFT[0].plot(xAC_FFT, np.array(dataAC_FFT) / sum(dataAC_FFT), '.-', label='FFT of AC')# , color='g')
 
-	axFFT[1].plot(xAC, dataAC, label='AC', color='b')
-	axFFT[1].plot(xACFit, dataACFit, label='Fit', color='g')
+	axFFT[1].plot(xACFit, dataACFit, label='Fit') # , color='g')
+	axFFT[1].plot(xAC, dataAC, label='AC') # , color='b')
 
 	axFFT[0].set_xlim(left=8, right=64)
         axFFT[1].set_xlim(left=0, right=140)
@@ -240,7 +270,7 @@ def evaluateData(x, data, data_err=np.array([]), key='diff', dataRange=(-170, -2
 	labs1 = [l.get_label() for l in ln1]
 
 	axFFT[0].legend(ln1, labs1)
-	axFFT[1].legend(loc='lower center')
+	axFFT[1].legend(loc='best')
 
 	if show:
 		fig1.show()
@@ -255,7 +285,7 @@ def evaluateData(x, data, data_err=np.array([]), key='diff', dataRange=(-170, -2
 
 	return resultReturnDict
 
-def compareData(x, data1, data2, key, dataRange, plotRange, pp=None, show=False):
+def compareData(x, data1, data2, key, dataRange, plotRange, pp=None, data1Label='', data2Label='', show=False):
 	resultReturnDict = {}
 
 	# = Data within range =
@@ -384,35 +414,39 @@ def compareData(x, data1, data2, key, dataRange, plotRange, pp=None, show=False)
 	# Cross correlation
 	# Limits and labels
 	fig1, axarr1 = plt.subplots(2, sharex=False)
+        fig1.subplots_adjust(hspace=0.4)
 	axarr1[0].set_xlim(left=-190, right=0)
 
 	plotLeft, plotRight = plotRange
 	axarr1[0].set_ylim(top=plotLeft, bottom=plotRight)
-	axarr1[0].set_ylabel('Data')
+	axarr1[1].set_xlabel('$z$ [mm]')
+	axarr1[0].set_ylabel('') # Data')
 
-	axarr1[1].set_xlim(left=-100, right=100)
-	axarr1[1].set_xlabel('z [mm]')
-	axarr1[1].set_ylabel('Cross correlation')
+	axarr1[1].set_xlim(left=0, right=140)
+	axarr1[1].set_xlabel('$z_s$ [mm]')
+	axarr1[1].set_ylabel('Cross correlation [a.u.]')
 
 	# Plot
-	axarr1[0].plot(x, data1, label='Data1')
-	axarr1[0].plot(x, data2, label='Data2')
+	axarr1[0].plot(x, data1, label=data1Label)
+	axarr1[0].plot(x, data2, label=data2Label)
 	axarr1[0].legend()
-	axarr1[1].plot(xCC, dataCC)
-	axarr1[1].plot(xCCFit, dataCCFit)
+	axarr1[1].plot(xCC, np.array(dataCC) / max(dataCC))
+	axarr1[1].plot(xCCFit, np.array(dataCCFit) / max(dataCC))
 
 	# Cumulative sum
 	# Limits and labels
-	fig2, ax2_1 = plt.subplots()
+	fig2, ax2_1 = plt.subplots(figsize=(7,3))
+        fig2.subplots_adjust(bottom=0.2)
 	ax2_1.set_xlabel('z [mm]')
 	ax2_1.set_ylabel('Cumulative sum')
 
 	ax2_1.set_xlim(left=-190, right=0)
-	ax2_1.set_ylim(top=max(max(data1Cum), max(data2Cum)) + 1, bottom=-20)
+        ax2_1.set_ylim(-20, 2)
+	# ax2_1.set_ylim(top=max(max(data1Cum), max(data2Cum)) + 1, bottom=min(min(data1Cum), min(data2Cum)))
 
 	# Plot
-	ax2_1.plot(x, data1Cum, label='Data1')
-	ax2_1.plot(x, data2Cum, label='Data2')
+	ax2_1.plot(x, data1Cum, label=data1Label)
+	ax2_1.plot(x, data2Cum, label=data2Label)
 
 	ax2_1.legend()
 
@@ -443,16 +477,27 @@ def getDataRange(x, data, left=-170, right=-20):
 
 # === FFT ===
 def fftEval(x, data):
+        # print x
+        xw = x[-1] - x[0]
+        x = list(x)
+        for k in range(1, 3):
+            x += list(np.array(x) + k*xw)[1:] 
+        data = list(data) + list(np.zeros(len(x) - len(data)))
+        #print len(x)
+
 	n = len( data )
 	k = np.arange( n )
 	T = x[-1] - x[0]
 	frq = k / T
 	frq = frq[range(n/2)]
 
-	dataFFT = np.abs( fft.rfft( data ) ) / n
+	dataFFT = np.abs( fft.rfft( data ) ) # / n
+        dataFFT /= np.sum( dataFFT )
 	dataFFT = dataFFT[range(n/2)]
 
 	xFFT = 1 / frq
+        # print xFFT
+        # print
 	return xFFT, dataFFT
 
 # === FIT EVAL ===
@@ -492,7 +537,7 @@ def getDeviations(y1, y2):
         return meanAbsDev, stdDev
 
 # === CORRELATION ===
-# Estimated of auto correlation, see:
+# Estimation of autocorrelation, see:
 # http://en.wikipedia.org/wiki/Autocorrelation
 def autoCorr(x):
 	n = len(x)
@@ -507,9 +552,12 @@ def crossCorr(x, data1, data2):
         n = len(x)
         t = x[-1] - x[0]
         k = np.arange(-n+1, n)
-        frq = k / (n / t)
+        # k = np.arange(n)
+        frq = k * t / n
 
         d = np.correlate(data1, data2, mode='full')
+        print len(frq), len(d)
+
 	return frq, d
 
 # === WAVELET ===

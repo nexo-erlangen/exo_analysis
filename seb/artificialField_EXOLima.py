@@ -4,29 +4,21 @@ import generate_random as gr
 import importlib
 try:
 	import matplotlib.pyplot as plt
-        from matplotlib import rc
-        rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
-        ## for Palatino and other serif fonts use:
-        #rc('font',**{'family':'serif','serif':['Palatino']})
-        rc('text', usetex=True)
 	from mpl_toolkits.mplot3d import Axes3D
 except:
 	pass
 
 from scipy.optimize import fsolve
-import artificialField_param as par
 import plot_support as ps
 
 # Bulge in PTFE at resistor chain
-reflectorRad1 = par.REFLECTORINNERRAD
+REFLECTORINNERRAD = 183.2356e-3
+reflectorRad1 = REFLECTORINNERRAD
 reflectorRad2 = 0.04
 reflectorX2 = 0.215
 
 def main():
-        # getCharge()
-        # return
-
-	# drawVectorField(*generateEField([0.14, 0.1832, 500], [-0.003, -0.19, 500]))
+	# drawVectorField(*generateEField([0.175, 0.1832, 500], [-0.03, -0.19, 500]))
 	# return
 
         '''
@@ -34,6 +26,8 @@ def main():
         r = [reflectorRad(t, reflectorRad1, reflectorRad2, reflectorX2) for t in theta]
 
         ax = plt.subplot(111, projection='polar')
+        ax.set_rmax(0.2)
+        # ax.set_rticks([0.05, 0.1, 0.183])
         ax.plot(theta, r)
         ax.grid(True)
         plt.show()
@@ -42,16 +36,23 @@ def main():
 
 	fName = 'gp_data/artDriftLin2.dat'
 	fN = open(fName, 'w')
-	Nr = 50
-	Nz = 1
+	Nr = 80
+	Nz = 2
 
 	lossCnt = 0
 	# for startX in np.linspace(par.REFLECTORINNERRAD - 0.1, par.REFLECTORINNERRAD - 0.0005, Nr):
 	for startX in np.linspace(0., 0., 1):
-		for startY in np.linspace(0.17, par.REFLECTORINNERRAD - 0.0005, Nr):
-			for startZ in np.linspace(-0.015, -0.15, Nz):
-				if np.sqrt(startX**2 + startY**2) >= par.REFLECTORINNERRAD:
+		for startY in np.linspace(0.1, REFLECTORINNERRAD - 0.0005, Nr):
+			for startZ in np.linspace(0.01, -0.01, Nz):
+				if np.sqrt(startX**2 + startY**2) >= REFLECTORINNERRAD:
 					continue
+
+                                global par
+                                if startZ > 0:
+                                    import artificialField_paramEXOLimaTop as par
+                                else:
+                                    import artificialField_paramEXOLimaBottom as par
+
 				startPos = [startX, startY, startZ]
 				# out = artificialDrift_C(0., startR, startZ, 250.) 
 				out = artificialDrift(startPos, 0, None, False, True)
@@ -117,6 +118,12 @@ def artificialTest():
     fN.close()
 
 def artificialDrift_C(x, y, z, t):
+    global par
+    if z > 0:
+        import artificialField_paramEXOLimaTop as par
+    else:
+        import artificialField_paramEXOLimaBottom as par
+
     # print 'Initial Position:', (x, y, z)
     startPos = [coord/1000. for coord in [x, y, z]]
     r = np.sqrt( startPos[0]**2 + startPos[1]**2 )
@@ -247,7 +254,7 @@ def totalIntersect(r, r_, z, theta):
     if par.z2 < z and z < par.z1:
 	interRes = fIntersect(r_, z, R)
     elif z >= par.z1:
-	interRes = gIntersect(r, r_, z, R)
+	interRes = gIntersect(r_, r_, z, R)
     elif z <= par.z2:
 	interRes = hIntersect(r, r_, z, R)
 
@@ -269,7 +276,7 @@ def total_der(r, r_, z):
 	if par.z2 < z and z < par.z1:
 		res = f_der(r_, z)
 	elif z >= par.z1:
-		res = f_der(r_, z) # False
+		res = False
 	elif z <= par.z2:
 		res = h_der(r_, z)
 	return res
@@ -504,30 +511,6 @@ def driftLength(r, z):
 
 	return l, hl
 
-# === Charge Distribution ===
-def getCharge():
-        import csv_to_vec as ctv
-
-        # H_BINS = [1, 0, 1, 2000, -0.22724, 0.22724, 1000, -0.21788400000000002, 0.014380000000000004]
-
-        # Choose H_BINS that posListSim = posListArt
-        posListSim, vecListSim = readEField()
-        vecListSim = np.array( [np.array(vec)/np.linalg.norm(vec) for vec in vecListSim] )
-
-        H_BINS = ctv.getH_BINS(posListSim, vecListSim)
-        print H_BINS
-        posListArt, vecListArt = getEFieldValues(H_BINS)
-
-        posList = posListSim
-        vecList = vecListSim - vecListArt
-
-        for i in range(1000, 1100):
-            print posListSim[i], vecListSim[i], posListArt[i], vecListArt[i], (posList[i], vecList[i])
-
-        ctv.plotEField(posListSim, abs(vecListSim), H_BINS, 1.e-5) 
-        ctv.plotEField(posListArt, abs(vecListArt), H_BINS, 1.e-5) 
-        ctv.plotEField(posList, abs(vecList), H_BINS, 1.e-5) 
-
 # === EField Plot ===
 def generateEField(rRange, zRange):
 	r = np.linspace( *rRange )
@@ -571,27 +554,6 @@ def getEField(r, z):
 	else:
 		return 0., 0.
 
-def getEFieldValues(H_BINS):
-        rRange = H_BINS[4:6] + [H_BINS[3]]
-        zRange = H_BINS[7:9] + [H_BINS[6]]
-	R, Z = np.linspace(*rRange), np.linspace(*zRange)
-
-        RR = np.array( list(R) * len(Z) )
-        ZZ = np.array( [inner for outer in [len(R)*[z] for z in list(Z)] for inner in outer] )
-
-        X = np.zeros( len(RR) )
-
-        posList = zip(X, RR, ZZ)
-
-	result = [np.array(getEField(abs(r), z)) for (x, r, z) in posList]
-        vecList = []
-        for res in result:
-            r, z = res
-            norm = np.linalg.norm( res )
-            vecList.append( (0., r/norm, z/norm) )
-
-        return np.array(posList), np.array(vecList)
-
 # === Plot Drift Lines ===
 def getLines(fn):
     l = []
@@ -608,17 +570,7 @@ def getLines(fn):
 
     return l
 
-def getColor(c, N, idx):
-    import matplotlib as mpl
-    cmap = mpl.cm.get_cmap(c)
-    norm = mpl.colors.Normalize(vmin=0.0, vmax=N - 1)
-    return cmap(norm(idx))
-
 def drawDrift(fn, threeD=False):
-    import seaborn as sns
-    sns.set_style('whitegrid', {'axes.grid' : False})
-    sns.set(style = 'ticks')
-
     l = getLines(fn)
 
     fig = plt.figure()
@@ -626,21 +578,19 @@ def drawDrift(fn, threeD=False):
         ax = fig.add_subplot(111, projection='3d')
     else:
 	ax = fig.add_subplot(111)
-	# plt.grid()
+	plt.grid()
 
-    for i, line in enumerate( l ):
-        vert = np.array( line ) * 1000
+    for line in l:
+        vert = np.array( line )
         x, y, z = vert[:,0], vert[:,1], vert[:,2]
 
         if threeD:
             ax.plot(x, y, z, color='b')
 	else:
-	    ax.plot(y, z, color=getColor('Blues', len(l), i))
+	    ax.plot(y, z, color='b')
 
-    ax.set_xlabel('$r$ [mm]')
-    ax.set_ylabel('$z$ [mm]')
-    ax.set_xlim(170, 183)
-    ax.set_ylim(-178, -15)
+    if not threeD:
+        ax.axhline(y=0, ls='--', linewidth=.5)
 
     fig.show()
 

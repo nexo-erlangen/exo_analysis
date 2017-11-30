@@ -4,17 +4,12 @@ import generate_random as gr
 import importlib
 try:
 	import matplotlib.pyplot as plt
-        from matplotlib import rc
-        rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
-        ## for Palatino and other serif fonts use:
-        #rc('font',**{'family':'serif','serif':['Palatino']})
-        rc('text', usetex=True)
 	from mpl_toolkits.mplot3d import Axes3D
 except:
 	pass
 
 from scipy.optimize import fsolve
-import artificialField_param as par
+import artificialField_paramTest as par
 import plot_support as ps
 
 # Bulge in PTFE at resistor chain
@@ -23,10 +18,11 @@ reflectorRad2 = 0.04
 reflectorX2 = 0.215
 
 def main():
-        # getCharge()
+        # lossTestRange([par.REFLECTORINNERRAD - 0.03, par.REFLECTORINNERRAD - 0.02])
+        # lossTest()
         # return
 
-	# drawVectorField(*generateEField([0.14, 0.1832, 500], [-0.003, -0.19, 500]))
+	# drawVectorField(*generateEField([0.17, par.REFLECTORINNERRAD, 500], [-0.12, -0.19, 500]))
 	# return
 
         '''
@@ -42,14 +38,14 @@ def main():
 
 	fName = 'gp_data/artDriftLin2.dat'
 	fN = open(fName, 'w')
-	Nr = 50
+	Nr = 40
 	Nz = 1
 
 	lossCnt = 0
 	# for startX in np.linspace(par.REFLECTORINNERRAD - 0.1, par.REFLECTORINNERRAD - 0.0005, Nr):
 	for startX in np.linspace(0., 0., 1):
 		for startY in np.linspace(0.17, par.REFLECTORINNERRAD - 0.0005, Nr):
-			for startZ in np.linspace(-0.015, -0.15, Nz):
+			for startZ in np.linspace(-0.03, -0.03, Nz):
 				if np.sqrt(startX**2 + startY**2) >= par.REFLECTORINNERRAD:
 					continue
 				startPos = [startX, startY, startZ]
@@ -74,11 +70,63 @@ def main():
 	fN.close()
 	print 'Percent lost:', float( lossCnt )/(Nr * Nz)
 
+        '''
 	for n in reversed(range(-10, 10)):    
 		r_ = getR(0.18, -0.038)
-		print n, rad(n, r_), zed(n, r_)
+	        print n, rad(n, r_), zed(n, r_)
+        '''
 
 	drawDrift( fName, False )
+
+def lossTest(N = 100):
+    x = 0.
+    ySpace = np.linspace(0.173, par.REFLECTORINNERRAD - 0.0005, 100)
+    zSpace = np.linspace(-0.01, -0.187, N)
+    lossSpace = []
+
+    for z in zSpace:
+        lossCnt = 0
+        for y in ySpace:
+            xPos = [x, y, z]
+            out = artificialDrift(xPos, 0, None, False, True)
+            if not out:
+                lossCnt += 1
+
+        lossSpace.append( float(lossCnt) / len(ySpace) )
+
+    plt.plot(zSpace, lossSpace)
+    plt.show()
+
+    raw_input('')
+    return
+
+def lossTestRange(r, N=100):
+    x = 0.
+    ySpace = np.linspace(r[0], r[1], 100)
+    zSpace = np.linspace(-0.01, -0.187, N)
+    posLossSpace = []
+    negLossSpace = []
+
+    for z in zSpace:
+        posLossCnt = 0
+        negLossCnt = 0
+        for y in ySpace:
+            xPos = [x, y, z]
+            x_, y_, z_ = artificialDrift(xPos, 0, None, False, True)[-1]
+            # print x_, y_, z_, r
+            if (y_ > r[1]):
+                posLossCnt += 1
+            if (y_ < r[0]):
+                negLossCnt += 1
+
+        posLossSpace.append( float(posLossCnt) / len(ySpace) )
+        negLossSpace.append( float(negLossCnt) / len(ySpace) )
+            
+    plt.plot(zSpace, posLossSpace, label='posLoss')
+    plt.plot(zSpace, negLossSpace, label='negLoss')
+    plt.legend()
+    plt.show()
+    return
 
 def artificialTest():
     zStart = -0.01
@@ -269,7 +317,7 @@ def total_der(r, r_, z):
 	if par.z2 < z and z < par.z1:
 		res = f_der(r_, z)
 	elif z >= par.z1:
-		res = f_der(r_, z) # False
+		res = False
 	elif z <= par.z2:
 		res = h_der(r_, z)
 	return res
@@ -277,9 +325,9 @@ def total_der(r, r_, z):
 # = F-SECTION = for z2 < z < z1
 def f(r, z): 
     # return m(r) * z + A(r) * S(z) + t(r)
-    return m(r) * z + A(r) * S(z) + t(r)
+    return m(r, z) * z + A(r) * S(z) + t(r)
 
-def m(r):
+def m(r, z):
     # return np.exp( c_m * (r - d_m) )
     # return 1 + c_m * (r - d_m) + (c_m * (r - d_m))**2
 
@@ -288,7 +336,10 @@ def m(r):
     if r < par.s_m:
         return par.c_m2 * r + par.d_m2
     else:
+        # if abs(z) < 0.12:
         return par.c_m * r + par.d_m
+        # else:
+        #    return par.c_m_ * r + par.d_m
 
 def t(r):
     # return m_t * r + t_t
@@ -315,16 +366,22 @@ def hull(z):
 	return (par.t_h - 1)/par.h_z0 * (z - par.h_z0) + par.t_h
 
 def f_der(r, z):
-	return m(r) + A(r) * S_der(z)
+	return m(r, z) + A(r) * S_der(z)
 
 def fIntersect(r, z, R):
+    # n = (R + A(r) - par.m_t * r) / (2*np.pi*par.b * m(r)) - 0.75
+    n = (R -m(r, z) * par.z_0 + A(r)*(1 - par.t_h) - t(r)) / ( par.b*( (m(r, z) + A(r)*((par.t_h - 1)/par.h_z0)) ) )- 0.25
+    #z_ = (R + A(r) - m_t * r) / m(r)
+    # z_ = (R + A(r)*np.sin(np.arccos(b*m(r)/A(r))) - m_t*r) / m(r)
+    # z_ = (R - par.m_t*r + A(r)*hull(z)*np.sqrt( 1 - ( (par.b*m(r)) / (2*np.pi*A(r)*hull(z)) )**2 )) / m(r)
+
     if par.c_m >= 0:
         t_ = (par.t_h - 1) / par.h_z0
-        z_ = (R + A(r) - t(r)) / (m(r) - A(r)*t_)
+        z_ = (R + A(r) - t(r)) / (m(r, z) - A(r)*t_)
         n_ = (z - par.z_0)/par.b + 0.25
 
         res = f(r, par.b*(np.floor(n_) - 0.25) + par.z_0)
-        print res, np.floor(n_)
+        # print res, np.floor(n_)
         if res >= R:
             return True
         else:
@@ -338,13 +395,7 @@ def fIntersect(r, z, R):
         else:
             return False
 
-    '''
-    n = (R + A(r) - par.m_t * r) / (2*np.pi*par.b * m(r)) - 0.75
-    #z_ = (R + A(r) - m_t * r) / m(r)
-    # z_ = (R + A(r)*np.sin(np.arccos(b*m(r)/A(r))) - m_t*r) / m(r)
-    z_ = (R - par.m_t*r + A(r)*np.sqrt( 1 - ( (par.b*m(r)) / (2*np.pi*A(r)) )**2 )) / m(r)
-    
-    if z_ <= 0: # and z_ >= -0.18: 
+    if z_ <= 0: #  and z_ >= -0.187: 
 	    if z >= z_:
 		res = True
 	    else:
@@ -352,9 +403,11 @@ def fIntersect(r, z, R):
     else:
 	    res = False
 
-    # print z, n, z_, res
+    print (z, r), n, z_, res
+    print [(z-par.z_0)/par.b - 0.75], n_
+    print [par.b*(n+0.75)+par.z_0 for n in range(-5, 0)]
+    print
     return res
-    '''
 
 # = G-SECTION = for z >= z1
 def g(r, r_, z):
@@ -405,7 +458,7 @@ def gIntersect(r, r_, z, R):
 
 # = H-SECTION = for z >= -0.18
 def a(r):
-	return ( m(r) + A(r)*S_der(par.z2) ) / ( 2*(par.z2 - par.z0) )
+	return ( m(r, z) + A(r)*S_der(par.z2) ) / ( 2*(par.z2 - par.z0) )
 
 def off(r):
 	return -a(r) * (par.z2 - par.z0)**2 + f(r, par.z2)
@@ -455,9 +508,17 @@ def getR(r_x, z_x):
 
     return r_sol[0]
     '''
+    # if abs(z_x) < 0.12:
+    c_m = par.c_m
+    d_m = par.d_m
+    '''
+    else:
+        c_m = par.c_m_
+        d_m = par.d_m_
+    '''
 
-    b = -( (par.c_m * z_x + par.m_t) / (par.c_A * S(z_x)) + 2*par.d_A )
-    c = (r_x - par.d_m * z_x) / (par.c_A * S(z_x)) - par.d_A2 / par.c_A + par.d_A**2
+    b = -( (c_m * z_x + par.m_t) / (par.c_A * S(z_x)) + 2*par.d_A )
+    c = (r_x - d_m * z_x) / (par.c_A * S(z_x)) - par.d_A2 / par.c_A + par.d_A**2
 
     r1 = ( -b + np.sqrt( b**2 - 4*c ) ) / 2
     r2 = ( -b - np.sqrt( b**2 - 4*c ) ) / 2
@@ -474,12 +535,12 @@ def getR(r_x, z_x):
 
 def rad(n, r):
     z = zed(n, r)
-    return m(r)*z - A(r) + t(r), f(r, zed(n, r))
+    return m(r, z)*z - A(r) + t(r), f(r, zed(n, r))
 
 def zed(n, r):
     #return 2*np.pi*b*(n - 0.25)
     #return b*(2*np.pi*n - np.arccos(-b*m(r)/A(r)))
-    return par.z_0 - (par.b*np.arccos(-par.b*m(r)/(2*np.pi*A(r))))/(2*np.pi) + par.b*n
+    return par.z_0 - (par.b*np.arccos(-par.b*m(r, z)/(2*np.pi*A(r))))/(2*np.pi) + par.b*n
 
 # =======================
 def driftLength(r, z):
@@ -504,30 +565,6 @@ def driftLength(r, z):
 
 	return l, hl
 
-# === Charge Distribution ===
-def getCharge():
-        import csv_to_vec as ctv
-
-        # H_BINS = [1, 0, 1, 2000, -0.22724, 0.22724, 1000, -0.21788400000000002, 0.014380000000000004]
-
-        # Choose H_BINS that posListSim = posListArt
-        posListSim, vecListSim = readEField()
-        vecListSim = np.array( [np.array(vec)/np.linalg.norm(vec) for vec in vecListSim] )
-
-        H_BINS = ctv.getH_BINS(posListSim, vecListSim)
-        print H_BINS
-        posListArt, vecListArt = getEFieldValues(H_BINS)
-
-        posList = posListSim
-        vecList = vecListSim - vecListArt
-
-        for i in range(1000, 1100):
-            print posListSim[i], vecListSim[i], posListArt[i], vecListArt[i], (posList[i], vecList[i])
-
-        ctv.plotEField(posListSim, abs(vecListSim), H_BINS, 1.e-5) 
-        ctv.plotEField(posListArt, abs(vecListArt), H_BINS, 1.e-5) 
-        ctv.plotEField(posList, abs(vecList), H_BINS, 1.e-5) 
-
 # === EField Plot ===
 def generateEField(rRange, zRange):
 	r = np.linspace( *rRange )
@@ -546,22 +583,21 @@ def drawVectorField(r, z, vecR, vecZ):
 	# plt.figure()
 	# Q = plt.quiver(R, Z, RESR, RESZ, units='inches')
 	f, ax = plt.subplots()
-	strm = ax.streamplot(r, z, vecR, vecZ, color=vecR, linewidth=1, density=2, arrowstyle='->', cmap=plt.cm.autumn)
+	strm = ax.streamplot(r, z, vecR, vecZ, color=vecR, linewidth=1, density=5, arrowstyle='-', cmap=plt.cm.autumn)
 	f.colorbar(strm.lines)
 
 	plt.show()
 	return
 
 def readEField():
-        import cPickle
 	posList = cPickle.load(open('efield_data/posList.p', 'rb'))
 	vecList = cPickle.load(open('efield_data/vecList.p', 'rb'))
 
-	return np.array(posList), np.array(vecList)
+	return	
 
 def getEField(r, z):
 	r_ = getR(r, z)
-	rDer = np.nan_to_num( -total_der(r, r_, z) )
+	rDer = -total_der(r, r_, z)
 	zDer = -1
 
 	if rDer:
@@ -570,27 +606,6 @@ def getEField(r, z):
 		# Evec = 1./np.sqrt(rDer**2 + zDer**2) * np.array([rDer, zDer])
 	else:
 		return 0., 0.
-
-def getEFieldValues(H_BINS):
-        rRange = H_BINS[4:6] + [H_BINS[3]]
-        zRange = H_BINS[7:9] + [H_BINS[6]]
-	R, Z = np.linspace(*rRange), np.linspace(*zRange)
-
-        RR = np.array( list(R) * len(Z) )
-        ZZ = np.array( [inner for outer in [len(R)*[z] for z in list(Z)] for inner in outer] )
-
-        X = np.zeros( len(RR) )
-
-        posList = zip(X, RR, ZZ)
-
-	result = [np.array(getEField(abs(r), z)) for (x, r, z) in posList]
-        vecList = []
-        for res in result:
-            r, z = res
-            norm = np.linalg.norm( res )
-            vecList.append( (0., r/norm, z/norm) )
-
-        return np.array(posList), np.array(vecList)
 
 # === Plot Drift Lines ===
 def getLines(fn):
@@ -608,17 +623,7 @@ def getLines(fn):
 
     return l
 
-def getColor(c, N, idx):
-    import matplotlib as mpl
-    cmap = mpl.cm.get_cmap(c)
-    norm = mpl.colors.Normalize(vmin=0.0, vmax=N - 1)
-    return cmap(norm(idx))
-
 def drawDrift(fn, threeD=False):
-    import seaborn as sns
-    sns.set_style('whitegrid', {'axes.grid' : False})
-    sns.set(style = 'ticks')
-
     l = getLines(fn)
 
     fig = plt.figure()
@@ -626,21 +631,16 @@ def drawDrift(fn, threeD=False):
         ax = fig.add_subplot(111, projection='3d')
     else:
 	ax = fig.add_subplot(111)
-	# plt.grid()
+	plt.grid()
 
-    for i, line in enumerate( l ):
-        vert = np.array( line ) * 1000
+    for line in l:
+        vert = np.array( line )
         x, y, z = vert[:,0], vert[:,1], vert[:,2]
 
         if threeD:
             ax.plot(x, y, z, color='b')
 	else:
-	    ax.plot(y, z, color=getColor('Blues', len(l), i))
-
-    ax.set_xlabel('$r$ [mm]')
-    ax.set_ylabel('$z$ [mm]')
-    ax.set_xlim(170, 183)
-    ax.set_ylim(-178, -15)
+	    ax.plot(y, z, color='b')
 
     fig.show()
 

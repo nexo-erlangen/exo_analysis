@@ -415,10 +415,14 @@ def driftElectronPotential2d(startPos, potential, H_BINS, eventNum=0, out_q=None
 	r_RID = 0.1832356
 	limit = 0.187
 
-        if RK4:
+        if useRK4:
             t = 0.0001
         else:
-	    t = 0.000325
+            binWx, binWy = (H_BINS[5] - H_BINS[4])/H_BINS[3], (H_BINS[8] - H_BINS[7])/H_BINS[6]
+            t = np.sqrt(binWx**2 + binWy**2)
+            if interpolate:
+                t *= 0.5
+	    # t = 0.000325
 
 	xVec = list( startPos )
 	posHistory = [ xVec ]
@@ -461,10 +465,13 @@ def driftElectronPotential2d(startPos, potential, H_BINS, eventNum=0, out_q=None
 		# print 'xVecPol:', xVecPol
 
                 if useRK4:
-                    grad = RK4(potential, [0., xVecPol[0], xVecPol[1]], 4*t, interpolate) 
+                    grad = RK4(potential, [0., xVecPol[0], xVecPol[1]], 5*t, interpolate) 
                 else:
                     if interpolate:
-			grad = np.array( potential.getGradient([0., xVecPol[0], xVecPol[1]], t) )
+                        try:
+                            grad = np.array( potential.getGradient([0., xVecPol[0], xVecPol[1]], 5*t) )
+                        except:
+                            grad = np.array( potential.getNearestGradient([0., xVecPol[0], xVecPol[1]]) )
                     else:
 			grad = np.array( potential.getNearestGradient([0., xVecPol[0], xVecPol[1]]) )
     
@@ -855,7 +862,7 @@ def driftElectron2d(startPos, potential=None, fEfieldData=None, PLANE_BINS=None,
                     posHistory.append( xVec )
 
 		coll = [ (coll[2*i], coll[2*i+1]) for i in range(2) ]
-		checkColl = np.array(lastColl) % np.array(coll)
+		checkColl = coll # np.array(lastColl) & np.array(coll)
 
                 if verbose:
                     print 'sqOrigin:', sqOrigin
@@ -1434,10 +1441,10 @@ def randomTest(H_BINS, TwoDFlag=False):
 	else:
 		eFieldFn = 'efield_hist.root'
 
-	startPos = 0.16 # REFLECTORINNERRAD/1000. - 0.1
+	startPos = 0.17 # REFLECTORINNERRAD/1000. - 0.1
 	endPos = REFLECTORINNERRAD/1000. - 0.0005
 	height = -0.003
-	N = 15
+	N = 15 
 
 	driftTest(H_BINS, startPos, endPos, height, N, eFieldFn, TwoDFlag)
 
@@ -1448,57 +1455,130 @@ def driftTest(H_BINS, startPos, endPos, height, N, eFieldFn, TwoDFlag):
 	EFieldData = [ fEfield.Get('Ex'), fEfield.Get('Ey'), fEfield.Get('Ez') ]
 
 	# --- RBF INTERPOLATION ---
+        H_BINS = [1, 0, 1, 250, -0.2, 0.2, 125, -0.2, 0.]
+        # H_BINS = [1, 0, 1, 500, -0.22724, 0.22724, 250, -0.21788400000000002, 0.014380000000000004]
 
 	# 2D interpolation
 	if TwoDFlag:
-		# Created by csv_to_vec
-		posList = cPickle.load(open('efield_data/posList.p', 'rb'))
-		vecList = cPickle.load(open('efield_data/vecList.p', 'rb'))
+            import artificialField as af
+
+            rRange = H_BINS[4:6] + [H_BINS[3]]
+            zRange = H_BINS[7:9] + [H_BINS[6]]
+            R, Z = np.linspace(*rRange), np.linspace(*zRange)
+
+            RR = np.array( list(R) * len(Z) )
+            ZZ = np.array( [inner for outer in [len(R)*[z] for z in list(Z)] for inner in outer] )
+
+            X = np.zeros( len(RR) )
+
+            posList = zip(X, RR, ZZ)
+
+            result = [np.array(af.getEField(r, z)) for (x, r, z) in posList]
+            vecList = []
+            for res in result:
+                r, z = res
+                norm = np.linalg.norm( res )
+                vecList.append( (0., r/norm, z/norm) )
+
+            # Created by csv_to_vec
+            # posList = cPickle.load(open('efield_data/posList.p', 'rb'))
+            # vecList = cPickle.load(open('efield_data/vecList.p', 'rb'))
 	else:
 		# 3D interpolation data from vector field and potential
 		# pot = vtp.vtkToPotential('exo200_wo_edges.vtk')
 
-		posList = cPickle.load(open('posList.p', 'rb'))
-		vecList = cPickle.load(open('vecList.p', 'rb'))
+		posList = cPickle.load(open('efield_data/posList.p', 'rb'))
+		vecList = cPickle.load(open('efield_data/vecList.p', 'rb'))
+                print len(posList), len(vecList)
 		# rbf = vtv.localRBF(*vtv.vtkToVec('exo200_wo_edges.vtk'))
 	
+        # Create radial basis function
 	rbf = vtv.localRBF(posList, vecList)
 
         start = time.clock()
+        heightList = []
 	for height in np.linspace(-0.01, -0.128, 5):
 		f = open('gp_data/gradient2d_%d.dat' % (height*1000), 'w')
 
+                lineList = []
 		for pos in np.linspace(startPos, endPos, N):
                         # RK4 with interpolation
 			# posHistoryPot, lengthCorrection = driftElectronPotential2d([pos, 0, height], rbf, H_BINS, 0, None, False, True, True, True) 
-                        posHistoryPot, lengthCorrection = driftElectron2d([pos, 0, height], rbf, None, H_BINS, 0, None, True)
+                        # posHistoryPot, lengthCorrection = driftElectronPotential2d([0, pos, height], rbf, H_BINS, 0, None, False, True, False, False)
+                        posHistoryPot, lengthCorrection = driftElectron2d([0, pos, height], rbf, None, H_BINS[3:], 0, None, True, False)
 
                         # Old: uses vtk potential
                         # vtp.driftParticle(rbf, startPos, endPos, 'gp_data/gradient2d_%d.dat' % (height*1000), height, N)
 			if posHistoryPot:	
+                                lineList.append( posHistoryPot )
 				# print 'pos: %f, height: %f, length: %f' % (pos, height, lengthCorrection)
 				for pos in posHistoryPot:
 					x, y, z = pos
 					f.write('%f\t%f\t%f\n' % (x, y, z))
 				
 				f.write('\n\n')
+                heightList.append( lineList )
 		f.close()
+        
         print '-- Test Execution time: %s s --' % str(start - time.clock())
+        import matplotlib.pyplot as plt
+        from matplotlib import cm
+        from matplotlib import rc
+        from matplotlib.ticker import NullFormatter
+        rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
+        rc('text', usetex=True)
+        from matplotlib.backends.backend_pdf import PdfPages
+        import seaborn as sns
+        # sns.set()
+        sns.set_style('whitegrid', {'axes.grid' : False})
+        sns.set(style = 'ticks')
+        # sns.palplot(sns.color_palette("Set2", 10))
+        sns.palplot(sns.cubehelix_palette(8, start=.5, rot=-.75))
+
+        def getColor(c, N, idx):
+            import matplotlib as mpl
+            cmap = mpl.cm.get_cmap(c)
+            norm = mpl.colors.Normalize(vmin=0.0, vmax=N - 1)
+            return cmap(norm(idx))
+
+        fig, ax = plt.subplots()
+        colorList = ['Purples', 'Blues', 'Greens', 'Oranges', 'Reds', 'Greys']
+        for i, height in enumerate(np.linspace(-0.01, -0.128, 5)):
+            ax.axhline(y=height*1000, c='k', lw=0.5, label=r'%d mm' % (height*1000))
+        for i, lineList in enumerate(heightList):
+            n = len(lineList) 
+            for j, line in enumerate(lineList):
+                lx, ly = np.array(line)[:,1], np.array(line)[:,2]
+                lx *= 1000
+                ly *= 1000
+                ax.plot(lx, ly, lw=1, color=getColor(colorList[i], n, j))
+        ax.set_xlabel(r'$r$ [mm]')
+        ax.set_ylabel(r'$z$ [mm]')
+
+        leg = ax.legend(loc='best', frameon=True) 
+        # leg = ax.get_legend()
+        leg.legendHandles[0].set_color('purple')
+        leg.legendHandles[1].set_color('blue')
+        leg.legendHandles[2].set_color('green')
+        leg.legendHandles[3].set_color('orange')
+        leg.legendHandles[4].set_color('red')
+
+        fig.show()
+        raw_input('')
 
 	# --- RAYCASTING ---
-	'''
 	print H_BINS
 
-	f = open('raycastTest.dat', 'w')
+	f = open('gp_data/raycastTest.dat', 'w')
 	posHistoryTotal = []
 	for x in np.linspace(startPos, endPos, N):
 		startPos = [0, x, height]
 		print startPos
 
-		if TwoDFlag:
-			posHistory = driftElectron2d(startPos, EFieldData, H_BINS, eventNum=0, out_q=None)
-		else:
-			posHistory = driftElectron(startPos, EFieldData, H_BINS, eventNum=0, out_q=None)
+		# if TwoDFlag:
+                #    posHistory = driftElectron2d(startPos, rbf, None, H_BINS[3:], eventNum=0, out_q=None, saveHistory=True, verbose=True)
+		#else:
+                posHistory, length = driftElectron(startPos, EFieldData, H_BINS, eventNum=0, out_q=None)
 
 		for item in posHistory:
 			f.write('%f\t%f\t%f\n' % (item[0], item[1], item[2]) )
@@ -1506,7 +1586,6 @@ def driftTest(H_BINS, startPos, endPos, height, N, eFieldFn, TwoDFlag):
 		posHistoryTotal.append(posHistory)
 
 	f.close()
-	'''
 
 # === DRIFT EVALUATION ===
 # Drift is performed in the x=0 area.
@@ -1516,165 +1595,257 @@ def driftTest(H_BINS, startPos, endPos, height, N, eFieldFn, TwoDFlag):
 #    repitition is evaluated and their mean 
 #    time is put out in the end.
 def driftEvaluation(N=30, reps=1, art=False):
+    doRK4 = False
+
     # Reflector radius
     r_RID = 0.1832356
     # Limit to switch to 3d drift
     limit = 0.187
-    # Bin settings of the used 2d electric field
-    H_BINS = [1, 0, 1, 2000, -0.22724, 0.22724, 1000, -0.21788400000000002, 0.014380000000000004]
 
-    # Currently, only 2d vector field is supported
-    if not art:
-        posList = cPickle.load( open('efield_data/posList.p', 'rb') )
-        vecList = cPickle.load( open('efield_data/vecList.p', 'rb') )
-    else:
-        # Use artificial field
-        import artificialField as af
+    devMean, timeMean = [], []
+    devStd, timeStd = [], []
+    binRange = np.arange(125, 1000+125, 125)
+    # binRange = [125]
+    # binRange = np.arange(25, 50+25, 25)
+    for binZ in binRange:
+        # Bin settings of the used 2d electric field
+        # H_BINS = [1, 0, 1, binX, -0.22724, 0.22724, binZ, -0.21788400000000002, 0.014380000000000004]
+        binX = 2*binZ
+        H_BINS = [1, 0, 1, binX, -0.2, 0.2, binZ, -0.2, 0.0]
 
-        rRange = H_BINS[4:6] + [H_BINS[3]]
-        zRange = H_BINS[7:9] + [H_BINS[6]]
-	R, Z = np.linspace(*rRange), np.linspace(*zRange)
+        binWx, binWy = (H_BINS[5] - H_BINS[4])/H_BINS[3], (H_BINS[8] - H_BINS[7])/H_BINS[6]
 
-        RR = np.array( list(R) * len(Z) )
-        ZZ = np.array( [inner for outer in [len(R)*[z] for z in list(Z)] for inner in outer] )
-
-        X = np.zeros( len(RR) )
-
-        posList = zip(X, RR, ZZ)
-
-	result = [np.array(af.getEField(r, z)) for (x, r, z) in posList]
-        vecList = []
-        for res in result:
-            r, z = res
-            norm = np.linalg.norm( res )
-            vecList.append( (0., r/norm, z/norm) )
-
-    # Create radial basis function
-    rbf = vtv.localRBF(posList, vecList)
-
-    # Get the parameter spaces
-    rSpace = np.linspace(0.17, r_RID-0.0005, N)
-    zSpace = np.linspace(-0.05, -limit+0.005, N) 
-
-    # Return new radius after drift using posHistory
-    def getRadius(posHistory):
-        if posHistory:
-            x, rRes, zRes = posHistory[-1]
+        # Currently, only 2d vector field is supported
+        if not art:
+            posList = cPickle.load( open('efield_data/posList.p', 'rb') )
+            vecList = cPickle.load( open('efield_data/vecList.p', 'rb') )
         else:
-            # Hit the PTFE
-            rRes = np.nan
+            # Use artificial field
+            import artificialField as af
 
-        return rRes
+            rRange = H_BINS[4:6] + [H_BINS[3]]
+            zRange = H_BINS[7:9] + [H_BINS[6]]
+            R, Z = np.linspace(*rRange), np.linspace(*zRange)
 
-    # Compare to radii
-    def compRadius(r1, r2):
-        # print (r1, r2)
-        if np.isnan(r1):
-            if np.isnan(r2):
-                return 0.
+            RR = np.array( list(R) * len(Z) )
+            ZZ = np.array( [inner for outer in [len(R)*[z] for z in list(Z)] for inner in outer] )
+
+            X = np.zeros( len(RR) )
+
+            posList = zip(X, RR, ZZ)
+
+            result = [np.array(af.getEField(r, z)) for (x, r, z) in posList]
+            vecList = []
+            for res in result:
+                r, z = res
+                norm = np.linalg.norm( res )
+                vecList.append( (0., r/norm, z/norm) )
+
+        # Create radial basis function
+        rbf = vtv.localRBF(posList, vecList)
+
+        # Get the parameter spaces
+        rSpace = np.linspace(0.17, r_RID-0.0005, N)
+        zSpace = np.linspace(-0.05, -limit+0.005, N) 
+
+        # Return new radius after drift using posHistory
+        def getRadius(posHistory):
+            if posHistory:
+                x, rRes, zRes = posHistory[-1]
             else:
-                return 1
-        elif np.isnan(r2):
+                # Hit the PTFE
+                rRes = np.nan
+
+            return rRes
+
+        # Compare to radii
+        def compRadius(r1, r2):
+            # print (r1, r2)
             if np.isnan(r1):
-                return 0.
-            else:
-                return -1
-        else:
-            return r1 - r2
-
-    # Arrays containing deviations
-    RK4IntpTotal, RK4Total, EulerTotal, RBTotal = np.zeros(N*N), np.zeros(N*N), np.zeros(N*N), np.zeros(N*N)
-    devList = [RK4IntpTotal, RK4Total, EulerTotal, RBTotal]
-
-    # Arrays containing time information
-    RK4IntpTime, RK4Time, EulerTime, RBTime = np.zeros(N*N), np.zeros(N*N), np.zeros(N*N), np.zeros(N*N)
-    timeList = [RK4IntpTime, RK4Time, EulerTime, RBTime]
-
-    # Loop over repititions
-    for rep in range(reps):
-        RK4Intp, RK4, Euler, RB = [], [], [], []
-        RK4IntpT, RK4T, EulerT, RBT = [], [], [], []
-
-        # Loop over z
-        for z in zSpace:
-            # Loop over r
-            for r in rSpace:
-                print (r, z)
-                pos = [0., r, z]
-
-                # Evaluate the different drifts.
-                # Start with the best, and calculate the deviation
-                # from its result for the other ones
-
-                if art:
-                    rComp = af.artificialDrift(pos, eventNum=0, out_q=None, diffuse=False, saveHistory=False)
-                    if not rComp:
-                        rComp = np.nan
-                    else:
-                        rComp = rComp[0][1]
+                if np.isnan(r2):
+                    return 0.
                 else:
-                    rComp = r
-                # print rComp
-                    
-                # def driftElectronPotential2d(startPos, potential, H_BINS, eventNum=0, out_q=None, diffuse=False, saveHistory=False, useRK4=False, interpolate=False)
-                # RK4 with RBF interpolation
-                startTime = time.clock()
-                rRK4Intp = getRadius( driftElectronPotential2d(pos, rbf, H_BINS, 0, None, False, True, True, False)[0] )
-                RK4Intp.append(compRadius(rComp, rRK4Intp))
-                RK4IntpT.append(time.clock() - startTime)
+                    return 1
+            elif np.isnan(r2):
+                if np.isnan(r1):
+                    return 0.
+                else:
+                    return -1
+            else:
+                return (r1 - r2)/r1
 
-                # RK4
-                startTime = time.clock()
-                rRK4 = getRadius( driftElectronPotential2d(pos, rbf, H_BINS, 0, None, False, True, True, False)[0] )
-                RK4.append(compRadius(rComp, rRK4))
-                RK4T.append(time.clock() - startTime)
-                # Euler
-                startTime = time.clock()
-                rEuler = getRadius( driftElectronPotential2d(pos, rbf, H_BINS, 0, None, False, True, False, False)[0] )
-                Euler.append(compRadius(rComp, rEuler))
-                EulerT.append(time.clock() - startTime)
-                # Ray-Box intersection
-                startTime = time.clock()
-                rRB = getRadius( driftElectron2d(pos, rbf, None, H_BINS, 0, None, True)[0] )
-                RB.append(compRadius(rComp, rRB))
-                RBT.append(time.clock() - startTime)
+        # Arrays containing deviations
+        RK4IntpTotal, RK4Total, EulerTotal, RBTotal = np.zeros(N*N), np.zeros(N*N), np.zeros(N*N), np.zeros(N*N)
+        if doRK4:
+            devList = [RK4IntpTotal, RK4Total, EulerTotal, RBTotal]
+        else:
+            devList = [RK4IntpTotal, EulerTotal, RBTotal]
 
-        # Add deviations to total
-        RK4IntpTotal += np.array( RK4Intp )
-        RK4Total += np.array( RK4 )
-        EulerTotal += np.array( Euler )
-        RBTotal += np.array( RB )
+        # Arrays containing time information
+        RK4IntpTime, RK4Time, EulerTime, RBTime = np.zeros(N*N), np.zeros(N*N), np.zeros(N*N), np.zeros(N*N)
+        if doRK4:
+            timeList = [RK4IntpTime, RK4Time, EulerTime, RBTime]
+        else:
+            timeList = [RK4IntpTime, EulerTime, RBTime]
 
-        # Add times to total
-        RK4IntpTime += np.array( RK4IntpT )
-        RK4Time += np.array( RK4T )
-        EulerTime += np.array( EulerT )
-        RBTime += np.array( RBT )
 
-    # Normalize deviations to number of repititions
-    devList = [item * 1./reps for item in devList]
-    # Same for times
-    timeList = [item * 1./reps for item in timeList]
+        # Loop over repititions
+        for rep in range(reps):
+            RK4Intp, RK4, Euler, RB = [], [], [], []
+            RK4IntpT, RK4T, EulerT, RBT = [], [], [], []
 
-    titleList = ['RK4 interpolate', 'RK4', 'Euler', 'Ray-Box']
-    for i in range( len(devList) ):
-        plotDeviation(rSpace, zSpace, devList[i])
-        print '%s: %.3f s' % (titleList[i], sum( timeList[i] )/(N**2))
+            # Loop over z
+            for z in zSpace:
+                # Loop over r
+                for r in rSpace:
+                    print (r, z)
+                    pos = [0., r, z]
 
-def plotDeviation(r, z, dev):
+                    # Evaluate the different drifts.
+                    # Start with the best, and calculate the deviation
+                    # from its result for the other ones
+
+                    if art:
+                        rComp = af.artificialDrift(pos, eventNum=0, out_q=None, diffuse=False, saveHistory=False)
+                        if not rComp:
+                            rComp = np.nan
+                        else:
+                            rComp = rComp[0][1]
+                    else:
+                        rComp = r
+                    # print rComp
+                        
+                    # def driftElectronPotential2d(startPos, potential, H_BINS, eventNum=0, out_q=None, diffuse=False, saveHistory=False, useRK4=False, interpolate=False)
+                    # RK4 with RBF interpolation
+                    startTime = time.clock()
+                    rRK4Intp = getRadius( driftElectronPotential2d(pos, rbf, H_BINS, 0, None, False, True, False, True)[0] )
+                    RK4Intp.append(compRadius(rComp, rRK4Intp))
+                    RK4IntpT.append(time.clock() - startTime)
+
+                    # RK4
+                    if doRK4:
+                        startTime = time.clock()
+                        rRK4 = getRadius( driftElectronPotential2d(pos, rbf, H_BINS, 0, None, False, True, True, False)[0] )
+                        RK4.append(compRadius(rComp, rRK4))
+                        RK4T.append(time.clock() - startTime)
+                    # Euler
+                    startTime = time.clock()
+                    rEuler = getRadius( driftElectronPotential2d(pos, rbf, H_BINS, 0, None, False, True, False, False)[0] )
+                    Euler.append(compRadius(rComp, rEuler))
+                    EulerT.append(time.clock() - startTime)
+                    # Ray-Box intersection
+                    startTime = time.clock()
+                    rRB = getRadius( driftElectron2d(pos, rbf, None, H_BINS[3:], 0, None, True)[0] )
+                    RB.append(compRadius(rComp, rRB))
+                    RBT.append(time.clock() - startTime)
+
+            # Add deviations to total
+            RK4IntpTotal += np.array( RK4Intp )
+            if doRK4:
+                RK4Total += np.array( RK4 )
+            EulerTotal += np.array( Euler )
+            RBTotal += np.array( RB )
+
+            # Add times to total
+            RK4IntpTime += np.array( RK4IntpT )
+            if doRK4:
+                RK4Time += np.array( RK4T )
+            EulerTime += np.array( EulerT )
+            RBTime += np.array( RBT )
+
+        # Normalize deviations to number of repititions
+        devList = [item * 1./reps for item in devList]
+        # Same for times
+        timeList = [item * 1./reps for item in timeList]
+
+        if doRK4:
+            titleList = ['Euler (interpolated)', 'RK4', 'Euler', 'Ray-Square']
+        else: 
+            titleList = ['Euler (interpolated)', 'Euler', 'Ray-Square']
+        mT, sT = [], []
+        mD, sD = [], []
+
+        maxDev = []
+        for dev in devList:
+            maxDev.append( max([d for d in abs(np.array(dev)) if d != 1]) )
+
+        for i in range( len(devList) ):
+            # plotDeviation(rSpace, zSpace, devList[i], max(maxDev))
+            meanTime, stdTime = np.mean(timeList[i]), np.std(timeList[i])
+            mT.append( meanTime ), sT.append( stdTime/np.sqrt(len(timeList[i])) )
+            print '%s: (%.3f +/- %.3f) s' % (titleList[i], np.mean(timeList[i]), np.std(timeList[i]))
+
+            devListClean = [elm for elm in np.abs(devList[i]) if elm != 1.]
+            meanDev, stdDev = np.mean( devListClean ), np.std( devListClean )
+            mD.append( meanDev ), sD.append( stdDev/np.sqrt(len(devListClean)) )
+            print '%s: %.3f, %.5f +/- %.5f' % (titleList[i], np.sum( np.square(devList[i]) )/(N**2), np.mean(devListClean), np.std(devListClean)) 
+
+        devMean.append( mD ), devStd.append( sD )
+        timeMean.append( mT ), timeStd.append( sT )
+    print devMean, devStd
+    print timeMean, timeStd
+    plotDeviationTrend(devMean, devStd, timeMean, timeStd, binRange, titleList)
+
+def plotDeviationTrend(devMean, devStd, timeMean, timeStd, binRange, labelList):
     import matplotlib.pyplot as plt
+    from matplotlib import cm
+    from matplotlib import rc
+    from matplotlib.ticker import NullFormatter
+    rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
+    rc('text', usetex=True)
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    import seaborn as sns
+    sns.set_style('whitegrid', {'axes.grid' : True})
+    sns.set(style = 'ticks')
+
+    figDev, axDev = plt.subplots(figsize=(7, 3))
+    figDev.subplots_adjust(bottom=0.2)
+    figTime, axTime = plt.subplots(figsize=(7, 3))
+    figTime.subplots_adjust(bottom=0.2)
+
+    for i in range(len(devMean[0])):
+        axDev.errorbar(binRange, np.array(devMean)[:,i], yerr=np.array(devStd)[:,i], capsize=2, label=labelList[i])
+        axTime.errorbar(binRange, np.array(timeMean)[:,i], yerr=np.array(timeStd)[:,i], capsize=2, label=labelList[i])
+
+    axTime.legend(loc='best', frameon=False)
+    axDev.legend(loc='best', frameon=False)
+
+    axTime.set_xlabel(r'Number of bins $N$')
+    axTime.set_ylabel(r'Execution time [s]')
+    axDev.set_xlabel(r'Number of bins $N$')
+    axDev.set_ylabel(r'$|r_\mathrm{set} - r_\mathrm{actual}|\,/\, r_\mathrm{set}$', fontsize=14)
+
+    sns.despine(fig=figTime, ax=axTime)
+    sns.despine(fig=figDev, ax=axDev)
+    figDev.show()
+    figTime.show()
+    raw_input('')
+
+def plotDeviation(r, z, dev, vMax=0.4):
+    import matplotlib.pyplot as plt
+    from matplotlib import cm
+    from matplotlib import rc
+    from matplotlib.ticker import NullFormatter
+    rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
+    rc('text', usetex=True)
+    from matplotlib.backends.backend_pdf import PdfPages
     N = len(r)
     
-    r = np.array( N * list(r) ).reshape((N, N))
-    z = np.array( [N * [i] for i in list(z)] ).reshape((N, N))
+    r = np.array( N * list(r) ).reshape((N, N)) * 1000
+    z = np.array( [N * [i] for i in list(z)] ).reshape((N, N)) * 1000
     dev = dev.reshape((N, N))
 
     cmap = plt.get_cmap('RdBu')
 
     fig, ax = plt.subplots()
-    im = ax.pcolormesh(r, z, dev, vmin=-0.005, vmax=0.005, cmap=cmap)
+    im = ax.pcolormesh(r, z, dev, vmin=-vMax, vmax=vMax, cmap=cmap)
     # ax.scatter(r, z, c=dev)
-    fig.colorbar(im, ax=ax)
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label(r'$(r_\mathrm{set} - r_\mathrm{actual})\,/\, r_\mathrm{set}$', fontsize=12)
+
+    ax.set_xlabel(r'$r$ [mm]')
+    ax.set_ylabel(r'$z$ [mm]')
 
     fig.show()
     raw_input('')
@@ -1689,7 +1860,11 @@ def RK4(potential, vec, h=0.01, interpolate=False):
     def getGrad(vec, h, interpolate):
         # print vec,
         if interpolate:
-            grad = np.array( potential.getGradient(vec, h) )
+            try:
+                grad = np.array( potential.getGradient(vec, h) )
+            except:
+                grad = np.array( potential.getNearestGradient(vec) )
+
         else:
             grad = np.array( potential.getNearestGradient(vec) )
             # print 'Grad', grad

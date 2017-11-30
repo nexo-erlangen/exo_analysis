@@ -47,7 +47,7 @@ else:
     resolutionCluster = [-.000123185451, 74.7268349, 0.0270834510]
 
 # MC scintillation energy resolution
-energyScintRes = 130
+energyScintRes = 130 # keV
 
 # = BIN RANGES =
 # Choose binning
@@ -59,10 +59,11 @@ if PHASE2:
     energyCorr = 2614.5 / 2651.59 # Shift = -5.16
     energyCorrRot = 2614.5 / 2608.86 # Shift = -0.59
 else:
-    energyCorr = 2614.5 / 2526.97
+    energyCorr = 1.034517 # 2614.5 / 2534.17 # 2614.5 / 2526.97
     energyCorrRot = 1.
 
-energyCorrMC = 2614.5 / 2601.87
+energyCorrScint = 0.984497 # 0.965230
+energyCorrMC = 2614.5 / 2608.31 # 2614.5 / 2601.87
 
 # Get bin ranges
 # Recursion formula for the bins in r
@@ -91,9 +92,167 @@ thetaRange = np.linspace(0, 2*np.pi, thetaBins + 1)
 rRange = rGetBins(rInit, drInit)
 print rRange, thetaRange, zRange
 
+def vectorDist():
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    vecGamma = 2614.5 * np.array( [-1, 0] )
+    theta = np.linspace(0, np.pi, 20)
+    for t in theta:
+        Ee = comptonEnergy(2614.5, t)
+        vecGammaSec = np.array([np.cos(np.pi - t), np.sin(np.pi - t)])
+        vecGammaSec =  (2614.5 - Ee) * vecGammaSec/np.linalg.norm(vecGammaSec)
+
+        vecElectron = vecGamma - vecGammaSec
+
+        print vecGamma / np.linalg.norm(vecGamma)
+        print vecGammaSec / np.linalg.norm(vecGammaSec)
+        print vecElectron / np.linalg.norm(vecElectron)
+        print vecAngle(vecElectron, np.array([0, -1]))*180/np.pi
+        print np.sqrt(sum(np.square(vecElectron)))
+        print
+
+def testFunction():
+    '''
+    x = np.array( [np.array(range(100)), np.array(range(100))] )
+    y = np.array( [500 + np.array(zip(314.2*np.sin(np.arange(100)), [0.001]*100)), 500 + np.array( zip(np.cos(np.arange(100)), [0.001]*100))] )
+    print x[:,0]
+    xlabel, ylabel = 'x', 'y'
+    pp = PdfPages( 'cluster_test.pdf' )
+    plotXY(x, y, xlabel, ylabel, pp=pp, smooth=False, title=None, show=True, light=True, polar=True)
+    # plotHistList([np.sin(np.pi/100 * np.arange(100)), np.cos(np.pi/100 * np.arange(100))], title='', show=True, pp=pp, fit=False, light=False)
+    pp.close()
+    raw_input('')
+    return
+    '''
+
+    from numpy.random import normal
+    d = cPickle.load(open('cluster_test.p', 'rb'))
+    d2 = cPickle.load(open('cluster_test2.p', 'rb'))
+    x, y = np.array(d['x']), np.array(d['y'])
+    x = (x - np.mean(x)) / abs(np.std(x))
+
+    x2, y2 = np.array(d2['x']), np.array(d2['y'])
+    x2 = (x2 - np.mean(x2)) / abs(np.std(x2))
+
+    # x = normal(0, 20, 10000)
+    # y = normal(0, 10, 10000)
+
+    # pp = PdfPages( 'cluster_test.pdf' )
+    pp = None
+    kdeOverlay(x, y, x2, y2, '$\Delta E$ [$\sigma$]', r'Electron angle $\theta_\mathrm{e}$')
+    # plotThree(x, y, xlabel='x', ylabel='y', title='default', pp=pp, iterpolate=True, show=False, project=True)
+    # pp.close()
+
+    return
+
+def testPlot():
+    import matplotlib.lines as mlines
+    from scipy.stats import kde
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+
+    light = True
+
+    # Change figure size
+    # fig, ax = plt.subplots(figsize=(4, 8))
+    fig, ax = plt.subplots(figsize=(.3 * 8.27, 11.69))
+    # plt.subplots_adjust(top=.4)
+
+    # Load data
+    if light:
+        d = np.array( cPickle.load(open('histPlotLight.p', 'rb')) )
+    else:
+        d = np.array( cPickle.load(open('histPlot.p', 'rb')) )
+
+    # Electron angle
+    elAngle = d[:,2]
+    # Data and MC / Charge and Light
+    data, mc = d[:,0], d[:,1]
+
+    offset = 0
+    offs = [offset]
+
+    colors = sns.color_palette('deep').as_hex()
+
+    peakList = []
+    peakOffs = []
+
+    # Loop over angles
+    for i in range(0, len(elAngle), 1):
+        d, m = np.array(data[i]), np.array(mc[i])
+
+        bins = np.linspace(min([min(b) for b in [d, m]]), max([max(b) for b in [d, m]]), 200)
+        fdata = kde.gaussian_kde(d)
+        fmc = kde.gaussian_kde(m)
+        dKde, mKde = fdata(bins), fmc(bins)
+
+        peakList.append( [max(zip(dKde, bins))[-1], max(zip(mKde, bins))[-1]] )
+        peakOffs.append([offset + max(dKde), offset + max(mKde)])
+
+        if light:
+            ax.fill_between(bins, mKde + offset, 0 * mKde + offset, zorder=-i, facecolor=colors[1], edgecolor='w', lw=1, alpha=1)
+            ax.fill_between(bins, dKde + offset, 0 * dKde + offset, zorder=-i, facecolor=colors[0], edgecolor='w', lw=1, alpha=1)
+            chargeLabel = mlines.Line2D([], [], color=colors[1], label='Charge')
+            scintLabel = mlines.Line2D([], [], color=colors[0], label='Scintillation')
+            plt.legend(handles=[chargeLabel, scintLabel], frameon=True, loc='upper left')
+
+        else:
+            ax.fill_between(bins, dKde + offset, 0 * dKde + offset, zorder=-i, facecolor=colors[1], edgecolor='w', lw=1, alpha=1)
+            ax.fill_between(bins, mKde + offset, 0 * mKde + offset, zorder=-i, facecolor=colors[0], edgecolor='w', lw=1, alpha=1)
+            dataLabel = mlines.Line2D([], [], color=colors[1], label='Data')
+            mcLabel = mlines.Line2D([], [], color=colors[0], label='MC')
+            plt.legend(handles=[dataLabel, mcLabel], frameon=True, loc='upper left')
+
+        ax.axhline(y=offset, zorder=-i, linestyle='-', color='k', lw=2)
+
+        if light:
+            ax.set_xlim(2614.5 - 300, 2614.5 + 300)
+        else:
+            ax.set_xlim(1500, 2381.75)
+            # ax.set_xlim(0, 2614.5)
+
+        offset += .5 * max([dKde.max(), mKde.max()])
+        offs.append(offset)
+
+    print peakList, peakOffs
+    peakColors = sns.color_palette('dark').as_hex()
+    peakList, peakOffs = np.array(peakList), np.array(peakOffs)
+    cMC, cData = '#dce1f0', '#d5f5d9'
+    if light:
+        cMC, cData = cData, cMC
+
+    # Data
+    plt.plot(peakList[:,0], peakOffs[:,0], c=cData, ls='--')
+    # MC
+    plt.plot(peakList[:,1], peakOffs[:,1], c=cMC, ls='--')
+
+    sns.despine(left=True, bottom=False, offset=-22.5)
+    # ax.set_yticks(offs, [r'$%.2f^\circ$' % elAngle[i] for i in range(0, elAngle, 2)])
+    plt.yticks(offs[:-1], [r'$%.1f$' % elAngle[i] if not i % 2 else ''  for i in range(0, len(elAngle), 1)])
+    plt.xlabel('Energy [keV]')
+    plt.ylabel(r'Electron angle $\theta_\mathrm{e}$ [$^\circ$]')
+    print offs
+
+    plt.tight_layout()
+    fig.show()
+    if light:
+        plt.savefig('histStackLight.pdf')
+    else:
+        plt.savefig('histStack.pdf')
+    raw_input('')
+
 # === MAIN ===
 def main():
     generate, plot, zstudy = get_args()
+
+    # if plot:
+        # vectorDist()
+        # return
+        # testPlot()
+        # return
+    #      testFunction()
+    #      return
 
     if zstudy:
         zStudy()
@@ -103,9 +262,14 @@ def main():
     # return
 
     if PHASE2:
-        pdfOut = 'comptonScatterPhase2.pdf'
+        pdfOut = 'comptonScatterPhase2'
     else:
-        pdfOut = 'comptonScatterPhase1.pdf'
+        pdfOut = 'comptonScatterPhase1'
+
+    if MULTIPLICITY > 2:
+        pdfOut += 'Multi.pdf'
+    else:
+        pdfOut += '.pdf'
 
     dS5 = getDict(src='S5', generate=generate, MC=False)
     resultListS5, resultDictS5 = comptonScattering(dS5, l=1, rLim=None, multiplicity=MULTIPLICITY)
@@ -188,7 +352,7 @@ def main():
 
     
     getEnergyInfo( resultDictS5, resultDictS5MC, smooth=True, src='ThS5' )
-    getEnergyInfo( resultDictS5, resultDictS5MC, smooth=True, src='ThS5', light=True )
+    getEnergyInfo( resultDictS5, resultDictS5MC, smooth=True, src='ThS5', light=True, MC=False )
 
     '''
     getEnergyInfo( resultDictS2, resultDictS2MC, smooth=True, src='ThS2' )
@@ -389,9 +553,9 @@ def getPath(src='S5', MC=False):
         else:
             srcString = 'SourceS5_Th228.root'
             if MULTIPLICITY > 2:
-                fOutName = 'clusterPosS5MC.p'
-            else:
                 fOutName = 'clusterPosS5MultiMC.p'
+            else:
+                fOutName = 'clusterPosS5MC.p'
 
     elif src == 'S2':
         SRC = SRC_S2
@@ -471,12 +635,12 @@ def comptonScattering(d, l=10, rLim=None, multiplicity=2):
             # Get positions of both clusters
             position = val['position']
 
-            energyScint = val['energyScint']
+            energyScint = val['energyScint'] * energyCorrScint
 
-            # if multiplicity > 2:
-            energyListEntry, energyReListEntry, energyTotalListEntry, thetaListEntry, thetaReListEntry, vecListEntry = getComptonOrderMulti(position, energy)
-            #else:
-            #    energyListEntry, energyReListEntry, energyTotalListEntry, thetaListEntry, thetaReListEntry, vecListEntry = getComptonOrder(position, energy, idx)
+            if multiplicity > 2:
+                energyListEntry, energyReListEntry, energyTotalListEntry, thetaListEntry, thetaReListEntry, vecListEntry = getComptonOrderMulti(position, energy)
+            else:
+                energyListEntry, energyReListEntry, energyTotalListEntry, thetaListEntry, thetaReListEntry, vecListEntry = getComptonOrder(position, energy, idx)
 
             if not energyListEntry:
                 continue
@@ -512,6 +676,8 @@ def comptonScattering(d, l=10, rLim=None, multiplicity=2):
 
         electronAngleList = []
         electronAngleReList = []
+        electronGammaAngleList = []
+
         interactionEnergyList = []
         vecGamma1List = []
         vecGamma2AngleList = []
@@ -583,12 +749,14 @@ def comptonScattering(d, l=10, rLim=None, multiplicity=2):
             electronAngleList.append( angleElectron*180./np.pi )
             electronAngleReList.append( angleElectronRe*180./np.pi )
 
-        electronList += zip([z] * len(electronAngleList), [phi] * len(electronAngleList), thetaListFilt, energyListFilt, electronAngleList, interactionEnergyList, electronAngleReList, vecGamma1List, vecGamma2AngleList, energyTotalList, energyScintList, xList, yList)
+            electronGammaAngleList.append( vecAngle(gamma1Vec, pElectron)*180./np.pi )
+
+        electronList += zip([z] * len(electronAngleList), [phi] * len(electronAngleList), thetaListFilt, energyListFilt, electronAngleList, interactionEnergyList, electronAngleReList, electronGammaAngleList, vecGamma1List, vecGamma2AngleList, energyTotalList, energyScintList, xList, yList)
 
         if NEvents < 1:
             continue
 
-        dRes = {'position': (r, phi, z), 'theta': thetaListFilt, 'thetaRe': thetaReListFilt, 'energy': energyListFilt, 'electronAngle': electronAngleList, 'energyRe': interactionEnergyList, 'electronAngleRe': electronAngleReList, 'vecGamma1Angle': vecGamma1List, 'energyTotal': energyTotalList, 'energyScint': energyScintList}
+        dRes = {'position': (r, phi, z), 'theta': thetaListFilt, 'thetaRe': thetaReListFilt, 'energy': energyListFilt, 'electronAngle': electronAngleList, 'energyRe': interactionEnergyList, 'electronAngleRe': electronAngleReList, 'electronGammaAngle': electronGammaAngleList, 'vecGamma1Angle': vecGamma1List, 'energyTotal': energyTotalList, 'energyScint': energyScintList}
 
         dOut[idx] = dRes
 
@@ -608,8 +776,9 @@ def comptonScattering(d, l=10, rLim=None, multiplicity=2):
 
 def getComptonOrder(position, energy, idx):
     EIn = 2614.5
+    energyRes = 100
     energyFirst, energySecond = energy
-    if energyFirst == 0 or energSecond == 0:
+    if energyFirst == 0 or energySecond == 0:
         return [False] * 6
 
     # Get rid of events with small energy cluster
@@ -645,13 +814,13 @@ def getComptonOrder(position, energy, idx):
         return [False]*6
 
     # Calculate scattering angle from energy
-    if energyFirst > comptonEdge:
-        return [False]*6
-    else:
+    # if (energyFirst - comptonEdge > energyRes) or (energySecond - comptonEdge > energyRes):
+    #    return [False]*6
+    # else:
         # thetaRe = comptonAngle(2614., energyFirst)
-        thetaRe = comptonAngle(energyTotal, energyFirst)
+    thetaRe = comptonAngle(energyTotal, energyFirst)
 
-    thetaReErr = comptonAngleErr(energyTotal, energyFirst, 100)
+    thetaReErr = comptonAngleErr(energyTotal, energyFirst, energyRes)
 
     # If calculated and measured angle do not
     # match, try to switch cluster positions
@@ -663,7 +832,7 @@ def getComptonOrder(position, energy, idx):
         # thetaClusterRelRot = np.pi - thetaClusterRel
         thetaClusterRelRot = vecAngle(vec1, vec2) 
         thetaReRot = comptonAngle(energyTotal, energySecond)
-        thetaReErrRot = comptonAngleErr(energyTotal, energySecond, 100)
+        thetaReErrRot = comptonAngleErr(energyTotal, energySecond, energyRes)
 
         # If those angles also don't match, 
         # check distance of cluster
@@ -742,7 +911,7 @@ def getComptonOrder(position, energy, idx):
 def getComptonOrderMulti(position, energy):
     import itertools
 
-    energyTotal = 2614.5
+    energyTotal = 2614.5 # sum(energy) # 2614.5
 
     # First entry has to be the source
     position = [SRC] + list(position)
@@ -802,7 +971,7 @@ def getComptonOrderMulti(position, energy):
 
             # Check if the energy is larger than the 
             # Compton edge. Impossible -> discard
-            if energySecond > comptonEdge or energyThird > comptonEdge:
+            if (energySecond > comptonEdge + 100) or (energyThird > comptonEdge + 100):
                 break
             else:
                 thetaRe = comptonAngle(energyFirst, energySecond)
@@ -814,7 +983,7 @@ def getComptonOrderMulti(position, energy):
             # If geometrical angle and angle from 
             # energy mismatch -> discard
             if (abs(thetaClusterRel - thetaRe) > thetaReErr) or np.isnan(thetaRe):
-                break
+                continue
 
             # Energy from geometrical angle.
             # Keep in mind that the energy used here is not
@@ -847,7 +1016,6 @@ def getComptonOrderMulti(position, energy):
         return energyList, energyReList, energyTotalList, thetaList, thetaReList, vecList
     else:
         return [False]*6
-
 
 # = GET DENSITY =
 # Get density of events per bin
@@ -959,7 +1127,7 @@ def getClusterPos(tree, FV, art=None, multiplicity=2):
             energyScint = normal(2614.5, energyScintRes)
 
         else:
-            energyScint = np.array(es.e_scint)
+            energyScint = np.array(es.e_scint) * energyCorrScint
 
         if len(energy) != multiplicity:
             continue
@@ -990,6 +1158,7 @@ def getClusterPos(tree, FV, art=None, multiplicity=2):
 
         # Loop over cluster tuple and its rotation
         idxOld = (0, 0, 0)  # Does not exist
+        en = energy
         for i in range( len(pos) ):
             # Create empty dictionary to store information
             dp = {}
@@ -997,7 +1166,7 @@ def getClusterPos(tree, FV, art=None, multiplicity=2):
             # rotate for different entries
             if multiplicity > 2:
                 position = rotate(pos, i)
-                energy = rotate(energy, i)
+                energy = rotate(en, i)
 
             else:
                 # rotate for the second entry
@@ -1072,7 +1241,7 @@ def getClusterPos(tree, FV, art=None, multiplicity=2):
     return d
 
 def rotate(l, n):
-    return l[n:] + l[:n]
+    return list(l)[n:] + list(l)[:n]
 
 # === GET ENERGY INFO ===
 def logNormModified(x, A, s, mu, sigma, c):
@@ -1082,7 +1251,7 @@ def getElectronAngleInfo(d, dMC):
     return
 
 # Use intersecting boxes to smooth the curve
-def getEnergyInfo(d, dMC, smooth=False, src='ThS5', light=False):
+def getEnergyInfo(d, dMC, smooth=False, src='ThS5', light=False, MC=False):
     # Define areas to merge data in
     # Format: (thetaMin, zMin), (thetaMax, zMax)
     # boxList = [((70, -100), (110, -10)), ((0, 50), (50, 182)), ((130, -182), (180, -50))]
@@ -1095,9 +1264,13 @@ def getEnergyInfo(d, dMC, smooth=False, src='ThS5', light=False):
         boxWidth = 15
         boxRange = (15, 165)
         boxStep = 5
+        # boxRange = (0, 180-boxStep)
 
         for i in range( int(float(boxRange[1] - boxRange[0] - boxWidth) / boxStep) ):
             # Get box edges
+            # boxCenter = boxRange[0] + boxStep * i
+            # boxLeft = boxCenter - .5*boxStep
+            # boxRight = boxCenter + .5*boxStep
             boxLeft = boxRange[0] + boxStep * i
             boxRight = boxLeft + boxWidth
             boxCenter = .5*(boxRight + boxLeft)
@@ -1122,11 +1295,11 @@ def getEnergyInfo(d, dMC, smooth=False, src='ThS5', light=False):
     angleBins = 10
 
     if light:
-        mergeListListMC = mergeBoxData(d, boxList, angleBins, True, light)
+        mergeListListMC = mergeBoxData(d if not MC else dMC, boxList, angleBins, True, light)
     else:
         mergeListListMC = mergeBoxData(dMC, boxList, angleBins, True, light)
 
-    mergeListList = mergeBoxData(d, boxList, angleBins, False, light)
+    mergeListList = mergeBoxData(d if not MC else dMC, boxList, angleBins, False, light)
 
     # print np.array(mergeListList)
     # print np.shape( mergeListList )
@@ -1176,11 +1349,11 @@ def getEnergyInfo(d, dMC, smooth=False, src='ThS5', light=False):
         for i in loopRange:
             if not mergeList[i] or not mergeListMC[i]:
                 continue
-            title = r'Electron angle $\theta_e = %.2f^\circ$, Scattering angle $\theta = %.2f^\circ$' % (angleList[i], scatteringAngles[j])
-            print title
-            maxList.append( plotHistList( [mergeList[i], mergeListMC[i]], title, False, pp, False, light ) )
+            title = r'Electron angle $\theta_\mathrm{e} = %.2f^\circ$, Scattering angle $\theta = %.2f^\circ$' % (angleList[i], scatteringAngles[j])
+            # print title
+            # maxList.append( plotHistList( [mergeList[i], mergeListMC[i]], title, False, None, False, light ) )
 
-        print maxList
+        # print maxList
 
         # maxList = np.array(maxList)[:,0], np.array(maxList)[:,1]
 
@@ -1190,7 +1363,11 @@ def getEnergyInfo(d, dMC, smooth=False, src='ThS5', light=False):
         # Get mean energy
         # meanList, meanListMC = [(float(np.sum(m))/len(m), float(np.sqrt(np.sum(m)))/len(m)) if m else (np.nan, np.nan) for m in mergeList], [(float(np.sum(m))/len(m), float(np.sqrt(np.sum(m)))/len(m)) if m else (np.nan, np.nan) for m in mergeListMC]
         meanList, meanListMC = [(np.mean(m), np.std(m)/np.sqrt(len(m))) if m else (np.nan, np.nan) for m in mergeList], [(np.mean(m), np.std(m)/np.sqrt(len(m))) if m else (np.nan, np.nan) for m in mergeListMC]
-        plotXY([angleList] * 2, [meanList, meanListMC], r'Electron angle $\theta_e$ [$^\circ$]', r'$\overline{E_T}$ [keV]', ppRes, smooth, titleAngle[j], False, light)
+        if meanList and meanListMC:
+            try:
+                plotXY([angleList] * 2, [meanList, meanListMC], r'Electron angle $\theta_\mathrm{e}$ [$^\circ$]', r'$\overline{E_\mathrm{e}}$ [keV]', ppRes, smooth, titleAngle[j], False, light, False)
+            except:
+                pass
 
         mean2d.append( np.array(meanList)[:,0] )
         mean2dMC.append( np.array(meanListMC)[:,0] )
@@ -1205,14 +1382,15 @@ def getEnergyInfo(d, dMC, smooth=False, src='ThS5', light=False):
         # Get mean energy relation
         print maxList
         meanEnList, meanEnListMC = getMean(mergeList), getMean(mergeListMC)
-        plotXY([angleList] * 2, [meanEnList, meanEnListMC], r'Electron angle $\theta_e$ [$^\circ$]', r'$\frac{\overline{E_T}}{\overline{{E_T}_\textrm{mean}}}$', ppRes, smooth, titleAngle[j], False, light)
+        if maxList:
+            plotXY([angleList] * 2, [meanEnList, meanEnListMC], r'Electron angle $\theta_\mathrm{e}$ [$^\circ$]', r'$\frac{\overline{E_\mathrm{e}}}{\overline{E_\mathrm{e}}_\textrm{mean}}$', ppRes, smooth, titleAngle[j], False, light, False)
 
-        # Divide histogram in half and compare areas 
-        # Use mean of data as split point
-        splitMean = .5*(max(np.array(meanList)[:,0]) + min(np.array(meanList)[:,0]))
+            # Divide histogram in half and compare areas 
+            # Use mean of data as split point
+            splitMean = .5*(max(np.array(meanList)[:,0]) + min(np.array(meanList)[:,0]))
 
-        areaList, areaListMC = compareAreas(mergeList, splitMean), compareAreas(mergeListMC, splitMean)
-        plotXY([angleList] * 2, [areaList, areaListMC], r'Electron angle $\theta_e$ [$^\circ$]', r'Area fraction', ppRes, smooth, titleAngle[j], False, light)
+            areaList, areaListMC = compareAreas(mergeList, splitMean), compareAreas(mergeListMC, splitMean)
+            plotXY([angleList] * 2, [areaList, areaListMC], r'Electron angle $\theta_\mathrm{e}$ [$^\circ$]', r'Area fraction', ppRes, smooth, titleAngle[j], False, light, False)
         
     # Correction of angles
     angleListFilt = [2*angleList[0] - angleList[1]] + angleList
@@ -1226,25 +1404,36 @@ def getEnergyInfo(d, dMC, smooth=False, src='ThS5', light=False):
     # Mean energy
     # meanListAll, meanListMCAll = [(float(np.sum(m))/len(m), float(np.sqrt(np.sum(m)))/len(m)) if m else (np.nan, np.nan) for m in mergeListFlat], [(float(np.sum(m))/len(m), float(np.sqrt(np.sum(m)))/len(m)) if m else (np.nan, np.nan) for m in mergeListMCFlat]
     meanListAll, meanListMCAll = [(np.mean(m), np.std(m)/np.sqrt(len(m))) if m else (np.nan, np.nan) for m in mergeListFlat], [(np.mean(m), np.std(m)/np.sqrt(len(m))) if m else (np.nan, np.nan) for m in mergeListMCFlat]
-    plotXY([angleList] * 2, [meanListAll, meanListMCAll], r'Electron angle $\theta_e$ [$^\circ$]', r'$\overline{E_T} [keV]$', ppRes, smooth, 'All scattering angles', show=False, light=light)
+    plotXY([angleList] * 2, [meanListAll, meanListMCAll], r'Electron angle $\theta_\mathrm{e}$ [$^\circ$]', r'$\overline{E_\mathrm{e}}$ [keV]', ppRes, smooth, 'All scattering angles', show=False, light=light, polar=False)
+    plotXY([angleList] * 2, [meanListAll, meanListMCAll], r'Electron angle $\theta_\mathrm{e}$ [$^\circ$]', r'$\overline{E_\mathrm{e}}$ [keV]', ppRes, smooth, 'All scattering angles', show=False, light=light, polar=True)
 
     # Normalized mean energy
     meanEnList, meanEnListMC = getMean(mergeListFlat), getMean(mergeListMCFlat)
-    plotXY([angleList] * 2, [meanEnList, meanEnListMC], r'Electron angle $\theta_e$ [$^\circ$]', r'$\frac{\overline{E_T}}{\overline{{E_T}_\textrm{mean}}}$', ppRes, smooth, 'All scattering angles', show=False, light=light)
+    plotXY([angleList] * 2, [meanEnList, meanEnListMC], r'Electron angle $\theta_\mathrm{e}$ [$^\circ$]', r'$\overline{E_\mathrm{e}} / \overline{E_\mathrm{e}}_\textrm{mean}$', ppRes, smooth, 'All scattering angles', show=False, light=light)
+    plotXY([angleList] * 2, [meanEnList, meanEnListMC], r'Electron angle $\theta_\mathrm{e}$ [$^\circ$]', r'$\overline{E_\mathrm{e}} / \overline{E_\mathrm{e}}_\textrm{mean}$', ppRes, smooth, 'All scattering angles', show=False, light=light, polar=True)
 
     # Area fraction
     splitMean = .5*(max(np.array(meanListAll)[:,0]) + min(np.array(meanListAll)[:,0]))
 
     areaList, areaListMC = compareAreas(mergeListFlat, splitMean), compareAreas(mergeListMCFlat, splitMean)
-    plotXY([angleList] * 2, [areaList, areaListMC], r'Electron angle $\theta_e$ [$^\circ$]', r'Area fraction', ppRes, smooth, 'All scattering angles', show=False, light=light)
+    plotXY([angleList] * 2, [areaList, areaListMC], r'Electron angle $\theta_\mathrm{e}$ [$^\circ$]', r'Area fraction', ppRes, smooth, 'All scattering angles', show=False, light=light)
+    plotXY([angleList] * 2, [areaList, areaListMC], r'Electron angle $\theta_\mathrm{e}$ [$^\circ$]', r'Area fraction', ppRes, smooth, 'All scattering angles', show=False, light=light, polar=True)
+
+    dOut = []
 
     # Plot energy spectra
     for k in loopRange:
     # for k, m in enumerate(mergeListFlat):
         if not mergeListFlat[k] or not mergeListMCFlat[k]:
             continue
-        title = r'Electron angle $\theta_e = %.2f^\circ$' % angleList[k]
-        plotHistList( [mergeListFlat[k], mergeListMCFlat[k]], title, False, pp, True )
+        title = r'Electron angle $\theta_\mathrm{e} = %.2f^\circ$' % angleList[k]
+        plotHistList( [mergeListFlat[k], mergeListMCFlat[k]], title, False, pp, False, light, False)
+        dOut.append([mergeListFlat[k], mergeListMCFlat[k], angleList[k]])
+
+    if light:
+        cPickle.dump(dOut, open('histPlotLight.p', 'wb'))
+    else:
+        cPickle.dump(dOut, open('histPlot.p', 'wb'))
 
     # == Each scattering angle ==
     # Electron angle vs. scattering angle
@@ -1253,18 +1442,18 @@ def getEnergyInfo(d, dMC, smooth=False, src='ThS5', light=False):
     mean2dNorm, mean2dNormMC = np.array( mean2dNorm ), np.array( mean2dNormMC )
 
     # Data
-    plotThree(mean2dNorm, angleListFilt, scatteringAnglesFilt, xlabel=r'Electron angle $\theta_E$ [$^\circ$]', ylabel=r'Scattering angle $\theta$ [$^\circ$]', title=r'Data', pp=ppRes, interpolate=False, show=False, project=False)
-    plotList([angleList] * len(mean2dNorm), mean2dNorm, yerr=mean2dNormErr, xlabel=r'Electron angle $\theta_e$ [$^\circ$]', ylabel=r'$\overline{E_T} / \sum_i\overline{E_{T,i}}$', labelList=[r'$\theta = %.2f$' % angle for angle in scatteringAngles], pp=ppRes, smooth=smooth, show=False)
+    plotThreeOld(mean2dNorm, angleListFilt, scatteringAnglesFilt, xlabel=r'Electron angle $\theta_\mathrm{e}$ [$^\circ$]', ylabel=r'Scattering angle $\theta$ [$^\circ$]', title=r'Data', pp=ppRes, interpolate=False, show=False, project=False)
+    plotList([angleList] * len(mean2dNorm), mean2dNorm, yerr=mean2dNormErr, xlabel=r'Electron angle $\theta_\mathrm{e}$ [$^\circ$]', ylabel=r'$\overline{E_\mathrm{e}} / \sum_i\overline{E_{T,i}}$', labelList=[r'$\theta = %.2f$' % angle for angle in scatteringAngles], pp=ppRes, smooth=smooth, show=False)
 
     # MC
-    plotThree(mean2dNormMC, angleListFilt, scatteringAnglesFilt, xlabel=r'Electron angle $\theta_E$ [$^\circ$]', ylabel=r'Scattering angle $\theta$ [$^\circ$]', title=r'MC', pp=ppRes, interpolate=False, show=False, project=False)
-    plotList([angleList] * len(mean2dNormMC), mean2dNormMC, yerr=mean2dNormMCErr, xlabel=r'Electron angle $\theta_e$ [$^\circ$]', ylabel=r'$\overline{E_T} / \sum_i\overline{E_{T,i}}$', labelList=[r'$\theta = %.2f$' % angle for angle in scatteringAngles], pp=ppRes, smooth=smooth, show=False)
+    plotThreeOld(mean2dNormMC, angleListFilt, scatteringAnglesFilt, xlabel=r'Electron angle $\theta_\mathrm{e}$ [$^\circ$]', ylabel=r'Scattering angle $\theta$ [$^\circ$]', title=r'MC', pp=ppRes, interpolate=False, show=False, project=False)
+    plotList([angleList] * len(mean2dNormMC), mean2dNormMC, yerr=mean2dNormMCErr, xlabel=r'Electron angle $\theta_\mathrm{e}$ [$^\circ$]', ylabel=r'$\overline{E_\mathrm{e}} / \sum_i\overline{E_{T,i}}$', labelList=[r'$\theta = %.2f$' % angle for angle in scatteringAngles], pp=ppRes, smooth=smooth, show=False)
 
     # Residuals
     resMean = (np.array(mean2d) - np.array(mean2dMC)) / np.array(mean2d)
     print resMean
-    plotThree(resMean, angleListFilt, scatteringAnglesFilt, xlabel=r'Electron angle $\theta_e$ [$^\circ$]', ylabel=r'Scattering angle $\theta$ [$^\circ$]', title=r'(Data - MC)/Data', pp=ppRes, interpolate=False, show=False, project=False)
-    plotList([angleList] * len(resMean), np.array(resMean), xlabel=r'Electron angle $\theta_e$ [$^\circ$]', ylabel=r'(Data-MC)/Data', labelList=[r'$\theta = %.2f$' % angle for angle in scatteringAngles], pp=ppRes, smooth=smooth, show=False)
+    plotThreeOld(resMean, angleListFilt, scatteringAnglesFilt, xlabel=r'Electron angle $\theta_\mathrm{e}$ [$^\circ$]', ylabel=r'Scattering angle $\theta$ [$^\circ$]', title=r'(Data - MC)/Data', pp=ppRes, interpolate=False, show=False, project=False)
+    plotList([angleList] * len(resMean), np.array(resMean), xlabel=r'Electron angle $\theta_\mathrm{e}$ [$^\circ$]', ylabel=r'(Data-MC)/Data', labelList=[r'$\theta = %.2f$' % angle for angle in scatteringAngles], pp=ppRes, smooth=smooth, show=False)
 
     # raw_input('')
 
@@ -1299,7 +1488,7 @@ def mergeBoxData(d, boxList, binN=12, MC=False, light=False):
                 energyList = val['energyScint']
         else:
             # TODO: away with it
-            energyList = val['energyRe']
+            energyList = val['energy']
 
         # Angle of electron to the z-axis
         electronAngleList = val['electronAngle']
@@ -1310,21 +1499,35 @@ def mergeBoxData(d, boxList, binN=12, MC=False, light=False):
         # Loop over boxes
         for i, box in enumerate(boxList):
             (thetaMin, zMin), (thetaMax, zMax) = box
-            print 'Box:', box
-            if (z >= zMin and z <= zMax):
-                # Loop over electron angle
-                for j, electronAngle in enumerate(electronAngleList):
-                    if (electronAngle >= thetaMin) and (electronAngle <= thetaMax):
-                        # print i, energyList[j]
-                        try:
-                            en = energyList[j]
-                            if light:
-                                if en > 500:
+            subBoxes = None
+            if thetaMin < 0:
+                subBoxes = [[(180 - thetaMin, zMin), (180, zMax)], [(0, zMin), (thetaMax, zMax)]]
+            elif thetaMax > 180:
+                subBoxes = [[(thetaMin, zMin), (180, zMax)], [(0, zMin), (thetaMax - 180, zMax)]]
+
+            if subBoxes:
+                bList = subBoxes
+            else:
+                bList = box
+
+            for b in bList:
+                (thetaMin, zMin), (thetaMax, zMax) = box
+                print 'Box:', box
+
+                if (z >= zMin and z <= zMax):
+                    # Loop over electron angle
+                    for j, electronAngle in enumerate(electronAngleList):
+                        if (electronAngle >= thetaMin) and (electronAngle <= thetaMax):
+                            # print i, energyList[j]
+                            try:
+                                en = energyList[j]
+                                if light:
+                                    if en > 500:
+                                        angleList[np.digitize(thetaList[j], np.linspace(0, 180.*(1-1./binN), binN)) - 1][i].append( en )
+                                else:
                                     angleList[np.digitize(thetaList[j], np.linspace(0, 180.*(1-1./binN), binN)) - 1][i].append( en )
-                            else:
-                                angleList[np.digitize(thetaList[j], np.linspace(0, 180.*(1-1./binN), binN)) - 1][i].append( en )
-                        except:
-                            pass
+                            except:
+                                pass
 
                         # mergeList[i].append( energyList[j] )
 
@@ -1449,10 +1652,13 @@ def comptonAngle(E, ET):
 
 def comptonAngleErr(E, ET, deltaET):
     err = np.sqrt( 511. ) * E / (np.sqrt(ET*(2*E**2 - ET*(2*E + 511))) * abs(ET - E)) * deltaET
+    '''
     if err > 40.*np.pi/180:
         return 40.*np.pi/180
     else:
         return err
+    '''
+    return err
 
 # === PLOT ===
 # resultList has the format
@@ -1466,104 +1672,282 @@ def plotScattering(resultList, title='default', pp=None):
     thetaElectronList = np.array( resultList )[:,4]
     energyReList = np.array( resultList )[:,5]
     thetaElectronReList = np.array( resultList )[:,6]
-    vecGamma1List = np.array( resultList )[:,7]
-    vecGamma2AngleList = np.array( resultList )[:,8]
-    energyTotalList = np.array( resultList )[:,9]
-    energyScintList = np.array( resultList )[:,10]
-    xList = np.array( resultList )[:,11]
-    yList = np.array( resultList )[:,12]
+    thetaElectronGammaList = np.array( resultList )[:,7]
+    vecGamma1List = np.array( resultList )[:,8]
+    vecGamma2AngleList = np.array( resultList )[:,9]
+    energyTotalList = np.array( resultList )[:,10]
+    energyScintList = np.array( resultList )[:,11]
+    xList = np.array( resultList )[:,12]
+    yList = np.array( resultList )[:,13]
+
+    BINS = (40, 20)
+    bins = (40, 40)
 
     # z vs. electron angle
-    H, xedges, yedges = np.histogram2d(thetaElectronList, zList, bins=[160, 40])
-    H = H.T
-    plotThree(H, xedges, yedges, r"Electron angle [$^\circ$]", r"z [mm]", title, pp=pp, show=False, project=True)
+    # H, xedges, yedges = np.histogram2d(thetaElectronList, zList, bins=[160, 40])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"Electron angle [$^\circ$]", r"z [mm]", title, pp=pp, show=False, project=True)
+    # d = {'x': thetaElectronList, 'y': zList}
+    # cPickle.dump(d, open('cluster_test.p', 'wb'))
+    plotThree(thetaElectronList, zList, BINS, r"Electron angle $\theta_\mathrm{e}$ [$^\circ$]", r"z [mm]", title, pp=pp, show=False, project=True)
 
     # phi vs. electron angle
-    H, xedges, yedges = np.histogram2d(thetaElectronList, phiList, bins=[160, 40])
-    H = H.T
-    plotThree(H, xedges, yedges, r"Electron angle [$^\circ$]", r"$\Phi$ [$^\circ$]", title, pp=pp, project=True)
+    # H, xedges, yedges = np.histogram2d(thetaElectronList, phiList, bins=[160, 40])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"Electron angle [$^\circ$]", r"$\Phi$ [$^\circ$]", title, pp=pp, project=True)
+    plotThree(thetaElectronList, phiList, BINS, r"Electron angle $\theta_\mathrm{e}$ [$^\circ$]", r"$\Phi$ [$^\circ$]", title, pp=pp, project=True)
 
     # energy vs. electron angle
-    H, xedges, yedges = np.histogram2d(thetaElectronList, energyList, bins=[160, 160])
-    H = H.T
-    plotThree(H, xedges, yedges, r"Electron angle [$^\circ$]", r"$E_T$ [keV]", title, pp=pp, project=True)
+    # H, xedges, yedges = np.histogram2d(thetaElectronList, energyList, bins=[160, 160])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"Electron angle [$^\circ$]", r"$E_T$ [keV]", title, pp=pp, project=True)
+    plotThree(thetaElectronList, energyList, bins, r"Electron angle $\theta_\mathrm{e}$ [$^\circ$]", r"$E_\mathrm{e}$ [keV]", title, pp=pp, project=True)
 
     # energy vs. electron angle (reconstructed)
-    H, xedges, yedges = np.histogram2d(thetaElectronReList, energyReList, bins=[160, 160])
-    H = H.T
-    plotThree(H, xedges, yedges, r"Electron angle $\theta_{e,\, \text{rec}}$ [$^\circ$]", r"$E_{T,\, \text{rec}}$ [keV]", title, pp=pp, project=True)
+    # H, xedges, yedges = np.histogram2d(thetaElectronReList, energyReList, bins=[160, 160])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"Electron angle $\theta_{e,\, \text{rec}}$ [$^\circ$]", r"$E_{T,\, \text{rec}}$ [keV]", title, pp=pp, project=True)
+    plotThree(thetaElectronReList, energyReList, bins, r"Electron angle $\theta_{e,\, \mathrm{rec}}$ [$^\circ$]", r"$E_{T,\, \mathrm{rec}}$ [keV]", title, pp=pp, project=True)
 
     # energy vs. scattering angle
-    H, xedges, yedges = np.histogram2d(thetaScatterList, energyList, bins=[160, 160])
-    H = H.T
-    plotThree(H, xedges, yedges, r"Scattering angle [$^\circ$]", r"$E_T$ [keV]", title, pp=pp, project=True)
+    # H, xedges, yedges = np.histogram2d(thetaScatterList, energyList, bins=[160, 160])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"Scattering angle [$^\circ$]", r"$E_T$ [keV]", title, pp=pp, project=True)
+    plotThree(thetaScatterList, energyList, bins, r"Scattering angle $\theta$ [$^\circ$]", r"$E_\mathrm{e}$ [keV]", title, pp=pp, project=True)
 
     # reconstructed energy vs. scattering angle
-    H, xedges, yedges = np.histogram2d(thetaScatterList, energyReList, bins=[160, 160])
-    H = H.T
-    plotThree(H, xedges, yedges, r"Scattering angle [$^\circ$]", r"$E_{T,\, \text{rec}}$ [keV]", title, pp=pp, project=True)
+    # H, xedges, yedges = np.histogram2d(thetaScatterList, energyReList, bins=[160, 160])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"Scattering angle [$^\circ$]", r"$E_{T,\, \text{rec}}$ [keV]", title, pp=pp, project=True)
+    plotThree(thetaScatterList, energyReList, bins, r"Scattering angle $\theta$ [$^\circ$]", r"$E_{T,\, \mathrm{rec}}$ [keV]", title, pp=pp, project=True)
 
     # scattering angle vs. electron angle
-    H, xedges, yedges = np.histogram2d(thetaElectronList, thetaScatterList, bins=[160, 160])
-    H = H.T
-    plotThree(H, xedges, yedges, r"Electron angle [$^\circ$]", "Scattering angle [$^\circ]", title, pp=pp, project=True)
+    # H, xedges, yedges = np.histogram2d(thetaElectronList, thetaScatterList, bins=[160, 160])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"Electron angle [$^\circ$]", "Scattering angle [$^\circ]", title, pp=pp, project=True)
+    plotThree(thetaElectronList, thetaScatterList, bins, r"Electron angle $\theta_\mathrm{e}$ [$^\circ$]", r"Scattering angle $\theta$ [$^\circ$]", title, pp=pp, project=True)
 
     # scattering angle vs. electron angle (reconstructed)
-    H, xedges, yedges = np.histogram2d(thetaElectronReList, thetaScatterList, bins=[160, 160])
-    H = H.T
-    plotThree(H, xedges, yedges, r"Electron angle $\theta_{e,\, \text{rec}}$ [$^\circ$]", r"Scattering angle [$^\circ$]", title, pp=pp, project=True)
+    # H, xedges, yedges = np.histogram2d(thetaElectronReList, thetaScatterList, bins=[160, 160])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"Electron angle $\theta_{e,\, \text{rec}}$ [$^\circ$]", r"Scattering angle [$^\circ$]", title, pp=pp, project=True)
+    plotThree(thetaElectronReList, thetaScatterList, bins, r"Electron angle $\theta_{e,\, \mathrm{rec}}$ [$^\circ$]", r"Scattering angle $\theta$ [$^\circ$]", title, pp=pp, project=True)
 
     # gamma1 angle vs. z
-    H, xedges, yedges = np.histogram2d(vecGamma1List, zList, bins=[160, 40])
-    H = H.T
-    plotThree(H, xedges, yedges, r"$\gamma_1$-angle [$^\circ$]", r"$z$ [mm]", title, pp=pp, project=True)
+    # H, xedges, yedges = np.histogram2d(vecGamma1List, zList, bins=[160, 40])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"$\gamma_1$-angle [$^\circ$]", r"$z$ [mm]", title, pp=pp, project=True)
+    plotThree(vecGamma1List, zList, BINS, r"$\gamma_1$-angle [$^\circ$]", r"$z$ [mm]", title, pp=pp, project=True)
 
     # gamma1 angle vs. scattering angle
-    H, xedges, yedges = np.histogram2d(vecGamma1List, thetaScatterList, bins=[160, 160])
-    H = H.T
-    plotThree(H, xedges, yedges, r"$\gamma_1$-angle [$^\circ$]", r"Scattering angle [$^\circ$]", title, pp=pp, project=True)
+    # H, xedges, yedges = np.histogram2d(vecGamma1List, thetaScatterList, bins=[160, 160])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"$\gamma_1$-angle [$^\circ$]", r"Scattering angle [$^\circ$]", title, pp=pp, project=True)
+    plotThree(vecGamma1List, thetaScatterList, bins, r"$\gamma_1$-angle [$^\circ$]", r"Scattering angle $\theta$ [$^\circ$]", title, pp=pp, project=True)
 
     # gamma2 angle vs. z
-    H, xedges, yedges = np.histogram2d(vecGamma2AngleList, zList, bins=[160, 40])
-    H = H.T
-    plotThree(H, xedges, yedges, r"$\gamma_2$-angle [$^\circ$]", r"$z$ [mm]", title, pp=pp, project=True)
+    # H, xedges, yedges = np.histogram2d(vecGamma2AngleList, zList, bins=[160, 40])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"$\gamma_2$-angle [$^\circ$]", r"$z$ [mm]", title, pp=pp, project=True)
+    plotThree(vecGamma2AngleList, zList, BINS, r"$\gamma_2$-angle [$^\circ$]", r"$z$ [mm]", title, pp=pp, project=True)
 
     # gamma2 angle vs. scattering angle
-    H, xedges, yedges = np.histogram2d(vecGamma2AngleList, thetaScatterList, bins=[160, 160])
-    H = H.T
-    plotThree(H, xedges, yedges, r"$\gamma_2$-angle [$^\circ$]", r"Scattering angle [$^\circ$]", title, pp=pp, project=True)
+    # H, xedges, yedges = np.histogram2d(vecGamma2AngleList, thetaScatterList, bins=[160, 160])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"$\gamma_2$-angle [$^\circ$]", r"Scattering angle [$^\circ$]", title, pp=pp, project=True)
+    plotThree(vecGamma2AngleList, thetaScatterList, bins, r"$\gamma_2$-angle [$^\circ$]", r"Scattering angle $\theta$ [$^\circ$]", title, pp=pp, project=True)
 
     # gamma2: y vs. x
-    H, xedges, yedges = np.histogram2d(xList, yList, bins=[160, 160])
-    H = H.T
-    plotThree(H, xedges, yedges, r"${\gamma_2}_x$ [mm]", r"${\gamma_2}_y$ [mm]", title, pp=pp, project=True)
+    # H, xedges, yedges = np.histogram2d(xList, yList, bins=[160, 160])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"${\gamma_2}_x$ [mm]", r"${\gamma_2}_y$ [mm]", title, pp=pp, project=True)
+    plotThree(xList, yList, bins, r"${\gamma_2}_x$ [mm]", r"${\gamma_2}_y$ [mm]", title, pp=pp, project=True)
 
     # ET vs. ETRe
-    H, xedges, yedges = np.histogram2d(energyList, energyReList, bins=[160, 160])
-    H = H.T
-    plotThree(H, xedges, yedges, r"$E_T$ [keV]", r"$E_{T,\ \text{rec}}$ [keV]", title, pp=pp, project=True)
-
-    # EnergyTotal vs. Electron angle
-    H, xedges, yedges = np.histogram2d(energyTotalList, thetaElectronReList, bins=[160, 160])
-    H = H.T
-    plotThree(H, xedges, yedges, r"$E_{\text{charge}}$ [keV]", r"Electron angle $\theta_{e,\, \text{rec}}$ [$^\circ$]", title, pp=pp, project=True)
+    # H, xedges, yedges = np.histogram2d(energyList, energyReList, bins=[160, 160])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"$E_T$ [keV]", r"$E_{T,\ \text{rec}}$ [keV]", title, pp=pp, project=True)
+    plotThree(energyList, energyReList, bins, r"$E_\mathrm{e}$ [keV]", r"$E_{T,\ \mathrm{rec}}$ [keV]", title, pp=pp, project=True)
 
     # Electron angle vs. Electron angle (Re)
-    H, xedges, yedges = np.histogram2d(thetaElectronList, thetaElectronReList, bins=[160, 160])
-    H = H.T
-    plotThree(H, xedges, yedges, r"Electron angle $\theta_{e}$ [$^\circ$]", r"Electron angle $\theta_{e,\, \text{rec}}$ [$^\circ$]", title, pp=pp, project=True)
+    # H, xedges, yedges = np.histogram2d(thetaElectronList, thetaElectronReList, bins=[160, 160])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"Electron angle $\theta_{e}$ [$^\circ$]", r"Electron angle $\theta_{e,\, \text{rec}}$ [$^\circ$]", title, pp=pp, project=True)
+    plotThree(thetaElectronList, thetaElectronReList, bins, r"Electron angle $\theta_{e}$ [$^\circ$]", r"Electron angle $\theta_{e,\, \mathrm{rec}}$ [$^\circ$]", title, pp=pp, project=True)
+
+    # Electron-Gamma angle vs. z
+    # H, xedges, yedges = np.histogram2d(thetaElectronGammaList, zList, bins=[160, 40])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"Electron angle $\theta_{e,\, \gamma}$ [$^\circ$]", r'z [mm]', title, pp=pp, project=True)
+    plotThree(thetaElectronGammaList, zList, BINS, r"Electron angle $\theta_{e,\, \gamma}$ [$^\circ$]", r'z [mm]', title, pp=pp, project=True)
+
+    # EnergyScint vs. z
+    enScint, zScint = zip(*[item for item in zip(energyScintList, zList) if abs(item[0] - 2614.5) < 500])
+    # H, xedges, yedges = np.histogram2d(zScint, enScint, bins=[40, 160])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r'z [mm]', r'$E_{\mathrm{scint}}$ [keV]',  title, pp=pp, project=True)
+    try:
+        plotThree(zScint, enScint, (20, 40), r'z [mm]', r'$E_{\mathrm{scint}}$ [keV]',  title, pp=pp, project=True)
+    except:
+        pass
 
     # EnergyScint vs. Electron angle (Re)
-    H, xedges, yedges = np.histogram2d(energyScintList, thetaElectronReList, bins=[160, 160])
-    H = H.T
-    plotThree(H, xedges, yedges, r"$E_{\text{scint}}$ [keV]", r"Electron angle $\theta_{e,\, \text{rec}}$ [$^\circ$]", title, pp=pp, project=True)
+    enScint, thetaEl = zip(*[item for item in zip(energyScintList, thetaElectronReList) if abs(item[0] - 2614.5) < 500])
+
+    d = {'x': enScint, 'y': thetaEl}
+    cPickle.dump(d, open('cluster_test.p', 'wb'))
+
+    # H, xedges, yedges = np.histogram2d(enScint, thetaEl, bins=[160, 160])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"$E_{\text{scint}}$ [keV]", r"Electron angle $\theta_{e,\, \text{rec}}$ [$^\circ$]", title, pp=pp, project=True)
+    try:
+        plotThree(enScint, thetaEl, bins, r"$E_{\mathrm{scint}}$ [keV]", r"Electron angle $\theta_{\mathrm{e},\, \mathrm{rec}}$ [$^\circ$]", title, pp=pp, project=True)
+    except:
+        pass
 
     # EnergyScint vs. Electron angle
-    H, xedges, yedges = np.histogram2d(energyScintList, thetaElectronList, bins=[160, 160])
-    H = H.T
-    plotThree(H, xedges, yedges, r"$E_{\text{scint}}$ [keV]", r"Electron angle $\theta_{e}$ [$^\circ$]", title, pp=pp, project=True)
+    enScint, thetaEl = zip(*[item for item in zip(energyScintList, thetaElectronList) if abs(item[0] - 2614.5) < 500])
+    # H, xedges, yedges = np.histogram2d(enScint, thetaEl, bins=[160, 160])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"$E_{\text{scint}}$ [keV]", r"Electron angle $\theta_{e}$ [$^\circ$]", title, pp=pp, project=True)
+    try:
+        plotThree(enScint, thetaEl, bins, r"$E_{\mathrm{scint}}$ [keV]", r"Electron angle $\theta_\mathrm{e}$ [$^\circ$]", title, pp=pp, project=True)
+    except:
+        pass
 
-def plotThree(h, x, y, xlabel='x', ylabel='y', title='default', pp=None, interpolate=True, show=False, project=True):
+    # EnergyTotal vs. Electron angle
+    enTot, thetaEl = zip(*[item for item in zip(energyTotalList, thetaElectronList) if abs(item[0] - 2614.5) < 500])
+    d2 = {'x': enTot, 'y': thetaEl}
+    cPickle.dump(d2, open('cluster_test2.p', 'wb'))
+
+    # H, xedges, yedges = np.histogram2d(enTot, thetaEl, bins=[160, 160])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"$E_{\text{charge}}$ [keV]", r"Electron angle $\theta_{e,\, \text{rec}}$ [$^\circ$]", title, pp=pp, project=True)
+    try:
+        plotThree(enTot, thetaEl, bins, r"$E_{\mathrm{charge}}$ [keV]", r"Electron angle $\theta_\mathrm{e}$ [$^\circ$]", title, pp=pp, project=True)
+    except:
+        pass
+
+    # EnergyTotal vs. Electron angle
+    enTot, thetaEl = zip(*[item for item in zip(energyTotalList, thetaElectronList) if abs(item[0] - 2614.5) < 500])
+    d2 = {'x': enTot, 'y': thetaEl}
+    cPickle.dump(d2, open('cluster_test2.p', 'wb'))
+
+    # EnergyElectron vs. Electron angle
+    try:
+        plotThree(energyList, thetaElectronList, bins, r"$E_\mathrm{e}$ [keV]", r"Electron angle $\theta_\mathrm{e}$ [$^\circ$]", title, pp=pp, project=True)
+    except:
+        pass
+
+    # EnergyTotal vs. EnergyScint
+    enTot, enScint = zip(*[item for item in zip(energyTotalList, energyScintList) if abs(item[0] - 2614.5) < 500])
+    # H, xedges, yedges = np.histogram2d(enTot, enScint, bins=[160, 160])
+    # H = H.T
+    # plotThree(H, xedges, yedges, r"$E_{\mathrm{charge}}$ [keV]", r"$E_{\mathrm{scint}}$ [keV]", title, pp=pp, project=True)
+    try:
+        plotThree(enTot, enScint, bins, r"$E_{\mathrm{charge}}$ [keV]", r"$E_{\mathrm{scint}}$ [keV]", title, pp=pp, project=True)
+    except:
+        pass
+
+def plotThree(x, y, bins=(80, 20), xlabel='x', ylabel='y', title='default', pp=None, interpolate=True, show=False, project=True, kde=True):
+    x, y = np.array(x), np.array(y)
+
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import ListedColormap
+    from matplotlib import cm
+    from matplotlib import rc
+    from copy import copy
+    from scipy.stats import kendalltau
+    import seaborn as sns
+    rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
+    rc('text', usetex=True)
+    # rc('legend', fontsize=14)
+
+    paper_rc = {'lines.linewidth': .5}
+    sns.set_context("paper", rc = paper_rc)
+
+    # Normalize
+    # h = np.array(h) / np.sum( h )
+
+    colorsData = sns.color_palette('viridis', 256) # sns.cubehelix_palette(20, start=.5, rot=-.75, dark=0.2, light=.7)
+    colors = [(1., 1., 1.)] + colorsData # ['#FFFFFFFF'] + colorsData
+    cmap = ListedColormap(sns.color_palette(colors)) #.as_hex())
+    colorsLine = [[c*1.8 if c*1.8 <= 1 else 1. for c in color] for color in colorsData]
+    cmapLines = ListedColormap(sns.color_palette(colorsLine)) # sns.cubehelix_palette(20, start=.5, rot=-.75, dark=0.15, light=.65, as_cmap=True)
+
+    lm = sns.jointplot(x, y, kind='hex', stat_func=None, space=0, cmap=cmap, marginal_kws=dict(bins=40), joint_kws=dict(gridsize=bins)) # , color='b')
+    try:
+        if kde:
+            lm.plot_joint(sns.kdeplot, n_levels=20, cmap=cmapLines)
+        else:
+            pass
+    except:
+        pass
+
+    lm.set_axis_labels(xlabel, ylabel, fontsize=14)
+    plt.xlim(min(x), max(x))
+    plt.ylim(min(y), max(y))
+    plt.subplots_adjust(left=0.15, bottom=0.1)
+    if show:
+        plt.show()
+
+    if pp:
+        pp.savefig( lm.fig )
+
+def kdeOverlay(x1, y1, x2, y2, xlabel='x', ylabel='y'):
+    x1, y1, x2, y2 = np.array(x1), np.array(y1), np.array(x2), np.array(y2)
+
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import ListedColormap
+    from matplotlib import cm
+    from matplotlib import rc
+    from copy import copy
+    from scipy.stats import kendalltau
+    import seaborn as sns
+    rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
+    rc('text', usetex=True)
+
+    paper_rc = {'lines.linewidth': .3}
+    sns.set_context("paper", rc = paper_rc)
+
+    cmapBlue, cmapRed = cmapAlpha('Blues', alpha=1.), cmapAlpha('Reds', alpha=1.)
+
+    cmapBlue = sns.cubehelix_palette(8, start=.5, rot=-.75, reverse=False, as_cmap=True)
+    cmapRed = sns.cubehelix_palette(8, start=.5, rot=-.75, reverse=True, as_cmap=True)
+
+    fig, ax = plt.subplots(figsize=(3, 6))
+    sns.kdeplot(x1, y1, shade=True, shade_lowest=True, ax=ax, cmap=cmapBlue, n_levels=20, bw=.1) 
+    sns.kdeplot(x2, y2, shade=False, shade_lowest=False, ax=ax, cmap='Purples_d', n_levels=20, bw=.1) 
+
+    # ax.set_xlim(min([min(x1), min(x2)]), max([max(x1), max(x2)]))
+    ax.set_xlim(-3, 3)
+    ax.set_ylim(15, 160)
+    # ax.set_ylim(min([min(y1), min(y2)]), max([max(y1), max(y2)]))
+
+    ax.set_xlabel(xlabel, fontsize=16)
+    ax.set_ylabel(ylabel, fontsize=16)
+
+    plt.show()
+
+def cmapAlpha(cmap='Blues', alpha=.2):
+    import matplotlib.pylab as pl
+    from matplotlib.colors import ListedColormap
+
+    # Choose colormap
+    cmap = pl.cm.get_cmap(cmap)
+
+    # Get the colormap colors
+    my_cmap = cmap(np.arange(cmap.N))
+
+    # Set alpha
+    my_cmap[:,-1] = np.array([alpha]*cmap.N) # np.linspace(0, 1, cmap.N)
+
+    # Create new colormap
+    my_cmap = ListedColormap(my_cmap)
+
+    return my_cmap
+
+def plotThreeOld(h, x, y, xlabel='x', ylabel='y', title='default', pp=None, interpolate=True, show=False, project=True):
     import matplotlib.pyplot as plt
     from matplotlib import cm
     from matplotlib import rc
@@ -1612,8 +1996,8 @@ def plotThree(h, x, y, xlabel='x', ylabel='y', title='default', pp=None, interpo
     else:
         im = axMain.imshow(h, interpolation='nearest', origin='low', extent=[x[1], x[-1], y[0], y[-1]], aspect='auto', cmap='viridis')
 
-    axMain.set_xlabel(xlabel)
-    axMain.set_ylabel(ylabel)
+    axMain.set_xlabel(xlabel, fontsize=16)
+    axMain.set_ylabel(ylabel, fontsize=16)
     if project:
         cbar = f.colorbar(im, ax=axHistY, location='right')
     else:
@@ -1645,7 +2029,8 @@ def plotThree(h, x, y, xlabel='x', ylabel='y', title='default', pp=None, interpo
     if pp:
         f.savefig(pp, format='pdf')
 
-def plotHistList(hList, title, show=False, pp=None, fit=False, light=False):
+def plotHistList(hList, title, show=False, pp=None, fit=False, light=False, kde=False):
+    from plot_functions import autoscale_y
     import matplotlib.pyplot as plt
     from matplotlib import cm
     from matplotlib import rc
@@ -1654,7 +2039,15 @@ def plotHistList(hList, title, show=False, pp=None, fit=False, light=False):
     rc('text', usetex=True)
     from scipy.optimize import curve_fit
 
-    plt.clf()
+    import seaborn as sns
+    # sns.set_style('whitegrid', {'axes.grid' : False})
+    # sns.set('ticks', {"ytick.major.size": 8})
+    sns.set_style('ticks')
+    sns.set(style='white')
+    # paper_rc = {'lines.linewidth': 1.5, 'lines.markersize': 5, 'lines.markeredgecolor': 'auto', 'lines.markeredgewidth': 1.5}
+    # sns.set_context("paper", rc = paper_rc)                                    
+
+    # plt.clf()
 
     bins = np.linspace(min([min(b) for b in hList]), max([max(b) for b in hList]), 80)
     parInit = [0.6, 2500., 2200., 0.5, 0.0001]
@@ -1662,19 +2055,35 @@ def plotHistList(hList, title, show=False, pp=None, fit=False, light=False):
 
     colorList = ['#af8dc3', '#7fbf7b']
     fitResult = []
+
+    fig, ax = plt.subplots(figsize=(7, 3))
+    if light:
+        fig.subplots_adjust(top=0.65, bottom=0.2)
+    else:
+        fig.subplots_adjust(bottom=0.2)
+
+    sns.despine(fig=fig, ax=ax, left=True)
+    ax.set_yticks([])
+
     if light:
         labelList = ['Scintillation', 'Charge']
     else:
         labelList = ['Data', 'MC']
+
     for i, h in enumerate(hList):
         print np.array( h )
         print colorList[i]
-        n, bins, patches = plt.hist(h, bins, alpha=0.5, label=labelList[i], normed=True, color=colorList[i])
+        # n, bins, patches = plt.hist(h, bins, alpha=0.5, label=labelList[i], normed=True) # , color=colorList[i])
+        sns.distplot(h, bins=bins, hist=True, kde=True, rug=kde, ax=ax, kde_kws=dict(bw=.05))
+
+        ax.set_xlabel('Energy [keV]', fontsize=16)
+        # ax.set_ylabel('Probability')
 
         # Normalize
         # n = np.array([float(j) for j in n]) / sum(h)
 
         # Fit
+        fit = False
         if fit:
             binsNew, nNew = filterList(bins, n, fitLim)
             try:
@@ -1693,18 +2102,61 @@ def plotHistList(hList, title, show=False, pp=None, fit=False, light=False):
             binsNew = np.array( binsNew )
             print popt, perr
 
-            plt.plot(binsNew, logNormModified(binsNew, *popt), label='%s Fit' % labelList[i], color=colorList[i])
+            # plt.plot(binsNew, logNormModified(binsNew, *popt), label='%s Fit' % labelList[i], color=colorList[i])
 
             fitResult.append( (mean, meanErr) )
 
-    plt.legend(loc='best')
+    peakPositions = []
+    for h in hList:
+        # hNorm = np.array(h) / sum(h)
+        hNorm, b = np.histogram(h, bins=bins, normed=True)
+        print zip(h, b)
+        hMax, binsMax = max(zip(hNorm, b)) # max(zip(bins, hNorm), key=lambda item:item[1])
+        print binsMax
+        peakPositions.append( (binsMax, hMax) )
+
+    xSize = bins[-1] - bins[0]
+    size = ax.get_ylim()
+    ySize = size[-1] - size[0]
+    print ySize
+
+    print peakPositions
+    yPeakData, yPeakMC = peakPositions[0][1], peakPositions[1][1]
+    yShift = ySize * 0.05
+    if yPeakData == yPeakMC or (abs(yPeakData - yPeakMC) / ySize < 0.05):
+        yShiftAdd = ySize*0.03
+        if yPeakData > yPeakMC:
+            yShiftData = yShift + yShiftAdd
+            yShiftMC = yShift - yShiftAdd
+        else:
+            yShiftData = yShift - yShiftAdd
+            yShiftMC = yShift + yShiftAdd
+    else:
+        yShiftData, yShiftMC = yShift, yShift
+
+    shiftList = [yShiftData, yShiftMC]
+
+    for i, label in enumerate(labelList):
+        peak = peakPositions[i]
+        ax.text(peak[0]+0.005*xSize, peak[1] + shiftList[i], label, fontsize=12)
+
+    if light:
+        ax.set_xlim(2614.5 - 600, 2614.5 + 600)
+        autoscale_y(ax, 0.)
+    else:
+        ax.set_xlim(0, 2500)
+    ax.set_ylim(bottom=0.)
+
+    # plt.legend(loc='best')
     plt.title(title)
 
     if show:
-        plt.show()
+        fig.show()
 
     if pp:
-        plt.savefig(pp, format='pdf')
+        # plt.savefig(pp, format='pdf')
+        # pp.savefig(fig)
+        fig.savefig(pp, format='pdf')
 
     return fitResult
 
@@ -1735,8 +2187,8 @@ def plotList(x, y, yerr=None, xlabel='', ylabel='', labelList=None, pp=None, smo
             ax.plot(x[i], y[i], label=labelList[i])
 
     ax.legend(loc='best', ncol=2)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
+    ax.set_xlabel(xlabel, fontsize=16)
+    ax.set_ylabel(ylabel, fontsize=16)
 
     if title:
         ax.suptitle( title )
@@ -1747,7 +2199,47 @@ def plotList(x, y, yerr=None, xlabel='', ylabel='', labelList=None, pp=None, smo
     if pp:
         f.savefig(pp, format='pdf')
 
-def plotXY(x, y, xlabel, ylabel, pp=None, smooth=False, title=None, show=False, light=False):
+def roundInteger(x, right=False, digit=1):
+    flip = False
+    if x == 0:
+        return 0
+
+    if x < 0:
+        x = -x
+        flip = True
+
+    '''
+    if x <= 1:
+        if right:
+            return 0
+        else:
+            if flip:
+                return -1
+            else:
+                return 1
+    '''
+
+    y = np.floor(np.log10(np.abs( x )))
+    if np.isnan( y ):
+        return 0
+    else:
+        y = int(y)
+
+    # e = y
+    e = digit
+
+    if right:
+        res = (np.floor(x / (10.**(y-2)))) * 10.**(y-2)
+    else:
+        res = (int(x / (10.**(y-2))) + 1) * 10.**(y-2)
+
+    if flip:
+        return -res
+    else:
+        return res
+
+def plotXY(x, y, xlabel, ylabel, pp=None, smooth=False, title=None, show=False, light=False, polar=False):
+    from fractional_polar import fractional_polar_axes
     import matplotlib.pyplot as plt
     from matplotlib import cm
     from matplotlib import rc
@@ -1755,13 +2247,90 @@ def plotXY(x, y, xlabel, ylabel, pp=None, smooth=False, title=None, show=False, 
     rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
     rc('text', usetex=True)
 
-    plt.clf()
-    # Create figure
-    f, (axData, axRes) = plt.subplots(2, sharex=True, sharey=False)
-    f.subplots_adjust(wspace=0, hspace=0.1)
+    import seaborn as sns
+    sns.set_style('whitegrid', {'axes.grid' : False})
+    sns.set(style = 'ticks')
+    paper_rc = {'lines.linewidth': 1.5, 'lines.markersize': 5, 'lines.markeredgecolor': 'auto', 'lines.markeredgewidth': 1.5}
+    sns.set_context("paper", rc = paper_rc)                                    
+    if polar:
+        from matplotlib import rcParams
+        rcParams['axes.titlepad'] = 10
 
-    axRes.axhline(y=0, color='white', linestyle='-', linewidth=1.5)
-    axRes.axhline(y=0, color='k', linestyle='--', linewidth=.5)
+    # Get data
+    xData, xMC = np.nan_to_num(np.array( x[0] )), np.nan_to_num(np.array( x[1] ))
+    yData, yMC = np.nan_to_num(np.array( y[0] )[:,0]), np.nan_to_num(np.array( y[1] )[:,0])
+    res = np.array( (yData - yMC) / yData )
+    print res
+
+    xRange = (min([min(xData), min(xMC)]), max([max(xData), max(xMC)]))
+    yRange = (min([min(yData), min(yMC)]), max([max(yData), max(yMC)]))
+    xSize = xRange[1] - xRange[0]
+    xBins = xSize / 5
+
+    ySize = yRange[1] - yRange[0]
+    yTop = roundInteger( yRange[1] + .1*ySize, right=False )
+    if yRange[0] > 0:
+        yBottom = roundInteger( yRange[0] - .1*ySize, right=True, digit=100 )
+    else:
+        yBottom = roundInteger( yRange[0] - .1*ySize, right=False, digit=100 )
+
+    yBins = float(ySize) / 5
+    print yRange, ySize
+    print yRange[0] - ySize*.1, yRange[1] + ySize*.1
+    print yBottom, yTop, yBins
+    print 
+
+    if polar:
+        yMin, yMax = yBottom, yTop # yRange
+
+        dataErr, mcErr = np.array( y[0] )[:,1], np.array( y[1] )[:,1]
+        resErr = np.sqrt((yMC/yData**2 * dataErr)**2 + (1./yData * mcErr)**2)
+        print 'yMin/Max', yMin, yMax
+        yData = (yData - yMin) / (yMax - yMin)
+        yMC = (yMC - yMin) / (yMax - yMin)
+        # res = np.array( (yData - yMC) / yData )
+
+        res[res == -np.inf] = 0
+        resRange = (min([min(res), min(res)]), max([max(res), max(res)]))
+        resSize = resRange[1] - resRange[0]
+        resTop = roundInteger( resRange[1] + .1*resSize, right=False, digit=0.1 )
+        if resRange[0] > 0:
+            resBottom = roundInteger( resRange[0] - .1*resSize, right=True, digit=0.01 )
+        else:
+            resBottom = roundInteger( resRange[0] - .1*resSize, right=False, digit=0.01 )
+
+        print resErr
+        resMin, resMax = resBottom, resTop
+        res = (res - resMin) / (resMax - resMin)
+        print 'resMin/Max', resMin, resMax
+
+        # plt.clf()
+        # Create figure
+        projection = 'polar'
+        sharex=False
+        #f, (axData, axRes) = plt.subplots(1, 2, figsize=(8, 3), sharex=False, sharey=False, subplot_kw=dict(projection='polar'))
+        fData = plt.figure(figsize=(6, 3.5))
+        axData = fractional_polar_axes(fData, thlim=(22.5, 152.5), rlim=(yMin, yMax), thlabel=r'', rlabel=ylabel, step=(15, 0.2))
+        fData.suptitle(xlabel)
+        print 
+
+        fRes = plt.figure(figsize=(6, 3.5))
+        if light:
+            reslabel = r'(Scintillation - Charge)/Scintillation'
+        else:
+            reslabel = r'(Data - MC)/Data'
+        
+        axRes = fractional_polar_axes(fRes, thlim=(22.5, 152.5), thlabel=r'', rlabel=reslabel, rlim=(resMin, resMax), step=(15, 0.2))
+        fRes.suptitle(xlabel)
+
+    else:
+        f, (axData, axRes) = plt.subplots(2, sharex=True, sharey=False, subplot_kw=dict(projection=None))
+        sns.despine(fig=f)
+        f.subplots_adjust(wspace=0, hspace=0.1)
+
+    if not polar:
+        axRes.axhline(y=0, color='white', linestyle='-', linewidth=1.5)
+        axRes.axhline(y=0, color='k', linestyle='--', linewidth=.5)
 
     # Axis 1 - Data and MC
     if light:
@@ -1770,30 +2339,58 @@ def plotXY(x, y, xlabel, ylabel, pp=None, smooth=False, title=None, show=False, 
         labelList = ['Data', 'MC']
     # axData.set_yscale('log', nonposy='clip')
 
-    xData, xMC = np.array( x[0] ), np.array( x[1] )
-    yData, yMC = np.array( y[0] )[:,0], np.array( y[1] )[:,0]
     if len(y[0][0]) == 2:
         dataErr, mcErr = np.array( y[0] )[:,1], np.array( y[1] )[:,1]
+        size = (xData[0], xData[-1]) # axRes.get_xlim()
+        print size
+        xSize = size[1] - size[0]
+        size = axData.get_ylim()
+        ySize = size[1] - size[0]
+
+        yLabelData, yLabelMC = yData[-1], yMC[-1]
+        if yLabelData == yLabelMC or (abs(yLabelData - yLabelMC) / ySize < 0.1):
+            yShift = ySize*0.2
+            if yData[-1] > yMC[-1]:
+                yShiftData = yData[-1] + yShift
+                yShiftMC = yMC[-1] - yShift
+            else:
+                yShiftData = yData[-1] - yShift
+                yShiftMC = yMC[-1] + yShift
+        else:
+            yShiftData, yShiftMC = 0, 0
+
+        print yShiftData, yShiftMC
+        print xData[-1], xSize
+
         if smooth:
             axData.plot(xData, yData, label=labelList[0])
+            if not polar:
+                axData.text(xData[-1]+0.01*xSize, yData[-1], labelList[0], fontsize=12)
             axData.plot(xMC, yMC, label=labelList[1])
+            if not polar:
+                axData.text(xMC[-1]+0.01*xSize, yMC[-1], labelList[1], fontsize=12)
             axData.fill_between(xData, yData-dataErr, yData+dataErr, alpha=.5)
             axData.fill_between(xMC, yMC-mcErr, yMC+mcErr, alpha=.5)
 
         else:
             axData.errorbar(xData, yData, yerr=dataErr, label=labelList[0])
+            if not polar:
+                axData.text(xData[-1]+0.01*xSize, yShiftData, labelList[0], fontsize=12)
             axData.errorbar(xMC, yMC, yerr=mcErr, label=labelList[1])
+            if not polar:
+                axData.text(xMC[-1]+0.01*xSize, yShiftMC, labelList[1], fontsize=12)
     else:
         axData.plot(xData, yData, label=labelList[0])
         axData.plot(xMC, yMC, label=labelList[1])
 
     # Axis 2 - residuals
-    res = (yData - yMC) / yData
     if len(y[0][0]) == 2:
-        try:
-            resErr = np.sqrt((yMC/yData**2 * dataErr)**2 + (1./yData * mcErr)**2)
-        except:
-            resErr = 0
+        if not polar:
+            try:
+                resErr = np.sqrt((yMC/yData**2 * dataErr)**2 + (1./yData * mcErr)**2)
+                print resErr
+            except:
+                resErr = 0
 
         if smooth:
             axRes.plot(xData, res)
@@ -1807,25 +2404,60 @@ def plotXY(x, y, xlabel, ylabel, pp=None, smooth=False, title=None, show=False, 
     # axRes.set_ylim(-0.5, 0.5)
 
     # Labels
-    axData.legend(loc='best')
-    axData.set_ylabel(ylabel)
+    if polar:
+        axData.legend(loc='best', frameon=False)
+    if polar:
+        axData.set_xlabel(xlabel, fontsize=16)
+        axData.set_title(ylabel, fontsize=16)
 
-    axRes.grid(color='k', linestyle='-', linewidth=.2)
-    axRes.set_xlabel(xlabel)
-    axRes.set_ylabel(r'(Data - MC)/Data')
+    else:
+        axData.set_ylabel(ylabel)
+
+    axRes.grid(linestyle='-', linewidth=.2)
+    axRes.set_xlabel(xlabel, fontsize=16)
+    if light:
+        if polar:
+            axRes.set_title(r'(Scintillation - Charge)/Scintillation')
+        else:
+            axRes.set_ylabel(r'(Scintillation - Charge)/Scintillation')
+    else:
+        if polar:
+            axRes.set_title(r'(Data - MC)/Data')
+        else:
+            axRes.set_ylabel(r'(Data - MC)/Data')
 
     # plt.xlabel(xlabel)
     # plt.ylabel(ylabel)
-    # plt.legend()
+    plt.legend()
 
-    if title:
+    if title and not polar:
         f.suptitle( title )
 
     if pp:
-        f.savefig(pp, format='pdf')
+        if polar:
+            fData.savefig(pp, format='pdf')
+            fRes.savefig(pp, format='pdf')
+        else:
+            f.savefig(pp, format='pdf')
+            # pp.savefig( f )
 
     if show:
-        f.show()
+        if polar:
+            fData.show()
+            fRes.show()
+        else:
+            f.show()
+        raw_input('')
+
+def placeLabels(ax, posList, labelList, textSize=12):
+    yBottom, yTop = ax.get_ylim()
+    yRange = yTop - yBottom
+
+    # Size of figure in pixels
+    size = ax.get_size_inches()*fig.dpi
+
+    # Do all labels fit in?
+    # if len(labelList) > yRange / 
 
 def filterList(x, h, val):
     xNew, hNew = zip(*((xEntry, h) for xEntry, h in zip(x, h) if xEntry > val))
@@ -1873,7 +2505,7 @@ def zStudy(MC=False):
 # === ARGUMENT PARSER ===
 def get_args():
     ap = argparse.ArgumentParser(description=' ')
-    ap.add_argument('-g', '--generate', help='Settings to load', required=False, action='store_true')
+    ap.add_argument('-g', '--generate', help='Generate files', required=False, action='store_true')
     ap.add_argument('-p', '--plot', help='Show plots', required=False, action='store_true')
     ap.add_argument('-z', '--zstudy', help='Study behaviour of z-coordinates in clusters', required=False, action='store_true')
 

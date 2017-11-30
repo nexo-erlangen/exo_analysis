@@ -1,8 +1,14 @@
 #!/usr/bin/env python
-
 try:
 	import matplotlib.pyplot as plt
 	from matplotlib.colors import LogNorm
+        from matplotlib import cm
+        from matplotlib import rc
+        from matplotlib.ticker import NullFormatter
+        rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
+        rc('text', usetex=True)
+        import seaborn as sns
+        sns.setstyle()
 except:
 	pass
 
@@ -21,10 +27,10 @@ def main():
 	# posList, vecList = storeEFieldToList('./efield_data/', 'export2D_converted.csv')
 	posList, vecList = storeEFieldToList('./efield_data/', 'export2D_AvgPotConverted.csv')
 
-	storeListToFile(posList, './efield_data/posList.p')
-	storeListToFile(vecList, './efield_data/vecList.p')
+	#storeListToFile(posList, './efield_data/posList.p')
+	#storeListToFile(vecList, './efield_data/vecList.p')
 
-	plotEField(posList, vecList, getH_BINS(posList, vecList)) 
+	plotEField(posList, vecList, getH_BINS(posList, vecList), component=None) 
 
 def storeListToFile(ls, fName):
 	cPickle.dump(ls, open(fName, 'wb'))
@@ -103,15 +109,18 @@ def storeEField(inDir, inFile, H_BINS=None, verbose=False):
 	return H_BINS
 
 def plotEField(posList, vecList, H_BINS, vmin=10.e3, component=None):
+        # posList, vecList = zip(*[item for item in zip(posList, vecList) if (abs(item[0][2]) < 0.2 and item[0][2] < 0.)]) 
+        print posList[0]
 	print H_BINS
-	ext = [H_BINS[4], H_BINS[5], H_BINS[7], H_BINS[8]]
+	ext = np.array( [H_BINS[4], H_BINS[5], H_BINS[7], H_BINS[8]] ) * 1000    # convert m to mm
+        # ext = np.array( [-0.2, 0.2, -0.2, 0] ) * 1000
 	q = int( H_BINS[3] )
 	vecListChunk = list(chunks(vecList, q))
 
 	vecList = []
 	for item in vecListChunk:
                 if not component:
-                    vecList.append( [np.linalg.norm(x) for x in item] )
+                    vecList.append( [np.linalg.norm(x)/100 for x in item] )
                 else:
                     idx = 0
                     if component == 'y':
@@ -119,16 +128,49 @@ def plotEField(posList, vecList, H_BINS, vmin=10.e3, component=None):
                     elif component == 'z':
                         idx = 2
 
-		    vecList.append( [ x[idx] for x in item ] )
+		    vecList.append( [ x[idx]/100 for x in item ] )
 
 	fig, ax = plt.subplots(1)
-	im = ax.imshow(vecList, extent=ext, interpolation='bicubic', cmap='viridis', origin='lower', norm=LogNorm(vmin=vmin))
+	# im = ax.imshow(vecList, extent=ext, interpolation='bicubic', cmap='viridis', origin='lower') # , norm=LogNorm(vmin=vmin))
+        import matplotlib as mpl
+        logthresh = 1
+        from matplotlib import cm
+        cmap = cm.get_cmap('Blues', 11)
+	im = ax.imshow(vecList, extent=ext, interpolation='bicubic', cmap=cmap, origin='lower', vmin=0, vmax=1000) # , norm=mpl.colors.SymLogNorm( logthresh ))
         # im = ax.imshow(vecList, extent=ext, interpolation='bicubic', cmap='viridis', origin='lower', vmin=-10.e3, vmax=0.)
-	cbar = fig.colorbar(im)
+        # im, cb = imshow_symlog(fig, ax, vecList, ext, -800, 800, 1)
+        ax.set_xlabel('x [mm]')
+        ax.set_ylabel('z [mm]')
+        ax.set_xlim(0, 195)
+        ax.set_ylim(-200, 0)
+
+        vmin, vmax = 800, 800
+        # maxlog=int(np.ceil( np.log10(vmax) ))
+        # minlog=int(np.ceil( np.log10(-vmin) ))
+        # tick_locations=([-(10**x) for x in xrange(minlog,-logthresh-1,-1)] +[0.0] + [(10**x) for x in xrange(-logthresh,maxlog+1)] )
+        cb = fig.colorbar(im)
+        cb.set_label(r'$E$ [V/cm]')
+	#cbar = fig.colorbar(im)
 	plt.show()
 
 	raw_input('')
 	return 
+
+def imshow_symlog(fig, ax, my_matrix, extent, vmin, vmax, logthresh=5):
+    import matplotlib as mpl
+    img = ax.imshow( my_matrix , extent=extent,
+        vmin = float(vmin), vmax=float(vmax),
+        norm = mpl.colors.SymLogNorm(10**-logthresh),
+        interpolation = 'bicubic')
+
+    maxlog=int(np.ceil( np.log10(vmax) ))
+    minlog=int(np.ceil( np.log10(-vmin) ))
+
+    #generate logarithmic ticks 
+    tick_locations=([-(10**x) for x in xrange(minlog,-logthresh-1,-1)] +[0.0] + [(10**x) for x in xrange(-logthresh,maxlog+1)] )
+
+    cb = fig.colorbar(img, ticks=tick_locations)
+    return img, cb
 
 def chunks(l, n):
 	for i in xrange(0, len(l), n):
